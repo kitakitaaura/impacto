@@ -6,6 +6,7 @@
 #include "../../renderer/renderer.h"
 #include "../../vm/interface/input.h"
 #include "../../mem.h"
+#include "../../inputsystem.h"
 
 #include <SDL3/SDL_stdinc.h>
 
@@ -44,6 +45,24 @@ bool TitleMenu::Pressed(uint32_t pad) const {
   return (PADinputButtonWentDown | PADinputMouseWentDown) & pad;
 }
 
+RectF TitleMenu::MainItemRect(int i) const {
+  const Sprite& sprite = MainItems[i].Normal;
+  const glm::vec2 pos = MainItemPos + glm::vec2(0.0f, i * MainItemSpacing);
+  return RectF(pos.x, pos.y, sprite.ScaledWidth(), sprite.ScaledHeight());
+}
+
+RectF TitleMenu::SubItemRect(int j) const {
+  const Sprite& sprite = MainItems[MainCursor].SubItems[j].Normal;
+  const glm::vec2 pos = MainItemPos +
+                        glm::vec2(0.0f, MainCursor * MainItemSpacing) +
+                        SubItemOffset + glm::vec2(0.0f, j * SubItemSpacing);
+  return RectF(pos.x, pos.y, sprite.ScaledWidth(), sprite.ScaledHeight());
+}
+
+bool TitleMenu::PointerClick(bool overItem) const {
+  return (PADinputMouseWentDown & PAD1A) && overItem;
+}
+
 void TitleMenu::Choose(int id) {
   ScrWork[SW_TITLECUR] = id;
   SetFlag(SF_TITLEEND, true);
@@ -69,8 +88,18 @@ void TitleMenu::ScriptTick(int mode) {
     case Stage::Main: {
       if (Pressed(PAD1DOWN)) MainCursor = (MainCursor + 1) % mainCount;
       if (Pressed(PAD1UP)) MainCursor = (MainCursor + mainCount - 1) % mainCount;
+      bool overItem = false;
+      for (int i = 0; i < mainCount; i++) {
+        if (MainItemRect(i).ContainsPoint(Input::CurMousePos)) {
+          if (Input::PrevMousePos != Input::CurMousePos) MainCursor = i;
+          overItem = i == MainCursor;
+        }
+      }
       const auto& item = MainItems[MainCursor];
-      if (Pressed(PAD1A)) {
+      const bool confirm = (PADinputButtonWentDown & PAD1A) ||
+                           PointerClick(overItem) ||
+                           (Pressed(PAD1A) && !(PADinputMouseWentDown & PAD1A));
+      if (confirm) {
         if (item.SubItems.empty()) {
           Choose(item.Id);
         } else {
@@ -85,8 +114,19 @@ void TitleMenu::ScriptTick(int mode) {
       const int subCount = (int)subs.size();
       if (Pressed(PAD1DOWN)) SubCursor = (SubCursor + 1) % subCount;
       if (Pressed(PAD1UP)) SubCursor = (SubCursor + subCount - 1) % subCount;
-      if (Pressed(PAD1A)) Choose(subs[SubCursor].Id);
-      if (Pressed(PAD1B)) CurStage = Stage::Main;
+      bool overItem = false;
+      for (int j = 0; j < subCount; j++) {
+        if (SubItemRect(j).ContainsPoint(Input::CurMousePos)) {
+          if (Input::PrevMousePos != Input::CurMousePos) SubCursor = j;
+          overItem = j == SubCursor;
+        }
+      }
+      if ((PADinputButtonWentDown & PAD1A) || PointerClick(overItem)) {
+        Choose(subs[SubCursor].Id);
+      } else if (Pressed(PAD1B) || (PADinputMouseWentDown & PAD1A)) {
+        // Back out: cancel button, right click, or a click off the submenu.
+        CurStage = Stage::Main;
+      }
     } break;
   }
 }

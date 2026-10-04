@@ -45,7 +45,7 @@ root.TitleMenu = {
     BackgroundPos = { X = 0, Y = 0 },
 
     PressToStartSprite = sprite("SGTitlePressEnter", 190, 1078, 240, 50),
-    PressToStartPos = { X = 110, Y = 600 },
+    PressToStartPos = { X = 150, Y = 540 },
     PressToStartAnimDurationIn = 0.8,
     PressToStartAnimDurationOut = 0.8,
     FadeDuration = 0.3,
@@ -53,8 +53,8 @@ root.TitleMenu = {
     ArrowSprite = sprite("SGTitleArrow", 1930, 199, 34, 37),
     ArrowOffset = { X = -26, Y = 0 },
 
-    MainItemPos = { X = 60, Y = 500 },
-    MainItemSpacing = 34,
+    MainItemPos = { X = 150, Y = 490 },
+    MainItemSpacing = 30,
     SubItemOffset = { X = 150, Y = 0 },
     SubItemSpacing = 26,
 

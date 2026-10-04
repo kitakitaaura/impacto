@@ -25,6 +25,10 @@ class TitleMenu : public Menu {
 
   void Choose(int id);
   bool Pressed(uint32_t pad) const;
+  RectF MainItemRect(int i) const;
+  RectF SubItemRect(int j) const;
+  // Pointer: hover moves the cursor; a click must land on an item.
+  bool PointerClick(bool overItem) const;
 
   Stage CurStage = Stage::PressStart;
   int MainCursor = 0;
