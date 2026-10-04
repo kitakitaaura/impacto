@@ -293,3 +293,9 @@ saves
 patches
 
 /basepaths.lua
+
+# noberu dev
+gamedata/
+noberu-dev/basepaths.gen.lua
+noberu-dev/saves/
+noberu-dev/*.log
