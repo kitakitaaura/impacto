@@ -52,6 +52,7 @@ enum class TitleMenuType : int {
   MO8,
   CC,
   CCLCC,
+  SGHD,
 };
 enum class OptionsMenuType : int {
   None,

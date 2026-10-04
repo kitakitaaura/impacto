@@ -1398,6 +1398,9 @@ VmInstruction(InstAutoSaveOld) {
     } break;
 
     case 10: {  // SetCheckpointId
+      if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
+        PopUint16(checkpointId);
+      }
       BlockThread;
       SetFlag(SF_SAVECAPTURE, 1);
     } break;

@@ -21,6 +21,7 @@
 
 #include "../profile/vm.h"
 #include "../games/cc/titlemenu.h"
+#include "../games/sghd/titlemenu.h"
 #include "../games/cclcc/systemmenu.h"
 #include "../games/cclcc/helpmenu.h"
 namespace Impacto {
@@ -610,7 +611,11 @@ VmInstruction(InstTitleMenuNew) {
 VmInstruction(InstTitleMenuOld) {
   StartInstruction;
   if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
-    PopUint8(arg1);
+    PopUint8(mode);
+    if (auto* menu = dynamic_cast<UI::SGHD::TitleMenu*>(UI::TitleMenuPtr)) {
+      menu->ScriptTick(mode);
+    }
+    return;
   }
 
   if (UI::TitleMenuPtr == nullptr) return;

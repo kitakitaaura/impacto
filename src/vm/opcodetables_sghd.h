@@ -51,7 +51,7 @@ InstructionProc inline constexpr OpcodeTableSystem_SGHD[256] = {
     InstCase,                 // 00 20
     InstBGMplay,              // 00 21
     InstBGMstop,              // 00 22
-    InstSEplayMO6,            // 00 23
+    InstSEplay,               // 00 23
     InstSEstop,               // 00 24
     InstPadAct,               // 00 25
     InstSSEplay,              // 00 26
@@ -71,8 +71,8 @@ InstructionProc inline constexpr OpcodeTableSystem_SGHD[256] = {
     InstTerminate,            // 00 34
     InstSignIn,               // 00 35
     InstAchievementIcon,      // 00 36
-    InstVoicePlayOld,         // 00 37
-    InstVoiceStop,            // 00 38
+    InstVoicePlay,            // 00 37
+    InstVoiceStopNew,         // 00 38
     InstVoicePlayWait,        // 00 39
     InstBGMduelPlay,          // 00 3A
     InstSNDpause,             // 00 3B

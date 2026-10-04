@@ -6,6 +6,8 @@ root.Vfs = {
         ["system"] = {dir .. "/system.mpk"},
         ["bgm"] = {dir .. "/bgm.mpk"},
         ["se"] = {dir .. "/se.mpk"},
+        -- No separate system-SE archive on Steam; UI code asks for "sysse".
+        ["sysse"] = {dir .. "/se.mpk"},
         ["voice"] = {dir .. "/voice.mpk"},
         ["bg"] = {dir .. "/bg.mpk"},
         ["chara"] = {dir .. "/chara.mpk"},

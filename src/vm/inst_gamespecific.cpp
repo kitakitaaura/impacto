@@ -1563,19 +1563,23 @@ VmInstruction(InstCallIfFlagSGHD) {
   thread->IpOffset = labelAdr;
 }
 
-// Named "UselessJump" by sc3ntist; never observed to jump.
+// sc3ntist calls this "UselessJump": its target is usually the very next label,
+// but the title script relies on it (00:50 00 L47 L47 skips a "Jump L46" back
+// into the press-start loop). Jumps to the first label; the meaning of the
+// second (and third, for cond 3) is unknown.
 VmInstruction(InstUselessJumpSGHD) {
   StartInstruction;
   PopUint8(cond);
   if (cond == 0 || cond == 2 || cond == 3) {
-    PopUint16(target);
+    PopLocalLabel(target);
     PopUint16(unk1);
+    if (cond == 3) {
+      PopUint16(unk2);
+    }
+    ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+               "STUB instruction UselessJump(cond: {:d}) taken\n", cond);
+    thread->IpOffset = target;
   }
-  if (cond == 3) {
-    PopUint16(unk2);
-  }
-  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
-             "STUB instruction UselessJump(cond: {:d})\n", cond);
 }
 
 VmInstruction(InstUnk0106SGHD) {

@@ -122,6 +122,7 @@ set(Impacto_Src
     src/profile/games/rne/tilebackground.cpp
     src/profile/games/rne/systemmenu.cpp
     src/profile/games/rne/titlemenu.cpp
+    src/profile/games/sghd/titlemenu.cpp
     src/profile/games/rne/sysmesbox.cpp
 
     src/profile/games/dash/titlemenu.cpp
@@ -186,6 +187,7 @@ set(Impacto_Src
     src/games/rne/tilebackground.cpp
     src/games/rne/systemmenu.cpp
     src/games/rne/titlemenu.cpp
+    src/games/sghd/titlemenu.cpp
     src/games/rne/sysmesbox.cpp
 
     src/games/dash/titlemenu.cpp
@@ -501,6 +503,7 @@ set(Impacto_Header
     src/profile/games/rne/tilebackground.h
     src/profile/games/rne/systemmenu.h
     src/profile/games/rne/titlemenu.h
+    src/profile/games/sghd/titlemenu.h
     src/profile/games/rne/sysmesbox.h
 
     src/profile/games/dash/titlemenu.h
@@ -563,6 +566,7 @@ set(Impacto_Header
     src/games/rne/tilebackground.h
     src/games/rne/systemmenu.h
     src/games/rne/titlemenu.h
+    src/games/sghd/titlemenu.h
     src/games/rne/sysmesbox.h
 
     src/games/dash/titlemenu.h
