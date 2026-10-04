@@ -520,12 +520,12 @@ void Background2D::UpdateState(const int bgId) {
 
 // RenderType comes straight from a script variable; an unknown fade type
 // must not index past the table (null member pointer -> crash).
-void Background2D::InvokeRenderProc() {
+void Background2D::InvokeRenderProc(const char* kind) {
   if (RenderType < 0 || RenderType >= (int)BackgroundRenderTable.size()) {
     static int lastWarned = -1;
     if (RenderType != lastWarned) {
       ImpLog(LogLevel::Warning, LogChannel::Render,
-             "Unknown background render type {:d}, drawing it regularly\n",
+             "Unknown {} render type {:d}, drawing it regularly\n", kind,
              RenderType);
       lastWarned = RenderType;
     }
@@ -570,7 +570,7 @@ void Background2D::Render(const int layer) {
     LastRenderedBackground = renderBgEffs ? this : nullptr;
   }
 
-  InvokeRenderProc();
+  InvokeRenderProc("background");
 }
 
 void Background2D::RenderBgEff(const int layer) {
@@ -670,7 +670,7 @@ void Capture2D::Render(const int layer) {
     return;
   }
 
-  InvokeRenderProc();
+  InvokeRenderProc("capture");
 }
 
 Background2D::BgTransformState
@@ -799,7 +799,7 @@ void BackgroundEffect2D::Render(const int layer) {
 
   Renderer->SetStencilMode(StencilBufferMode::Test);
 
-  InvokeRenderProc();
+  InvokeRenderProc("background effect");
 
   Renderer->SetStencilMode(StencilBufferMode::Off);
 }

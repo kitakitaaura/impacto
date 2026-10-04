@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <magic_enum/magic_enum_containers.hpp>
 
 #include "../util.h"
@@ -108,6 +110,9 @@ inline bool OldNametagPositioning = false;
 inline NametagType NametagCurrentType = NametagType::None;
 
 inline glm::vec2 NametagPosition{};
+// If set, two/three-piece nametags center on this x (around a centered name)
+// instead of starting at NametagPosition.x.
+inline std::optional<float> NametagCenterX;
 inline Sprite NametagSprite;
 inline Sprite NametagLeftSprite;
 inline Sprite NametagMiddleSprite;

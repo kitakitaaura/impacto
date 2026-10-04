@@ -59,28 +59,33 @@ void ThreePieceNametagDisplay::Render(const NameInfo& nameInfo,
                                       const glm::vec4 tint) {
   if (Hidden || !nameInfo.RenderWindow || nameInfo.Name.empty()) return;
 
-  Renderer->DrawSprite(NametagLeftSprite, NametagPosition, tint);
+  const float textWidth = GetTextWidth(nameInfo.Name);
+  glm::vec2 position = NametagPosition;
+  if (NametagCenterX) {
+    position.x =
+        *NametagCenterX - textWidth / 2.0f - NametagLeftSprite.ScaledWidth();
+  }
 
-  float rightX = NametagPosition.x + NametagLeftSprite.ScaledWidth() +
-                 GetTextWidth(nameInfo.Name);
+  Renderer->DrawSprite(NametagLeftSprite, position, tint);
+
+  float rightX = position.x + NametagLeftSprite.ScaledWidth() + textWidth;
 
   if (NametagCurrentType == NametagType::ThreePiece) {
     rightX -= NametagMiddleBaseWidth;
 
     // Draw middle sprites
-    const float middleBegin =
-        NametagPosition.x + NametagLeftSprite.ScaledWidth();
+    const float middleBegin = position.x + NametagLeftSprite.ScaledWidth();
 
     Sprite middleSprite = NametagMiddleSprite;
     for (float x = middleBegin; x < rightX;
          x += NametagMiddleSprite.ScaledWidth()) {
       middleSprite.SetScaledWidth(
           std::min(rightX - x, NametagMiddleSprite.ScaledWidth()));
-      Renderer->DrawSprite(middleSprite, {x, NametagPosition.y}, tint);
+      Renderer->DrawSprite(middleSprite, {x, position.y}, tint);
     }
   }
 
-  Renderer->DrawSprite(NametagRightSprite, {rightX, NametagPosition.y}, tint);
+  Renderer->DrawSprite(NametagRightSprite, {rightX, position.y}, tint);
 
   DialogueFont->DrawProcessedText(nameInfo.Name, tint.a,
                                   RendererOutlineMode::Full);

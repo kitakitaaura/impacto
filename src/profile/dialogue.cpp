@@ -16,6 +16,7 @@ namespace Dialogue {
 static void ConfigureNametag() {
   OldNametagPositioning =
       TryGetMember<bool>("OldNametagPositioning").value_or(false);
+  NametagCenterX = TryGetMember<float>("NametagCenterX");
   NametagCurrentType = EnsureGetMember<NametagType>("NametagCurrentType");
 
   switch (NametagCurrentType) {

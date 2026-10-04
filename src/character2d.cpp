@@ -468,11 +468,15 @@ void Character2D::Render(const int layer) {
         Character2DState const& state = stateItr->second;
         const auto& layData =
             *std::get_if<Character2DState::LAYData>(&state.Data);
+        // LAY offsets and chunk size are in texture pixels; AssetScale maps
+        // high-resolution art (Steam S;G) back to design units.
+        const float assetScale = Profile::Game::AssetScale;
+        const float chunkSize = 30.0f / assetScale;
         for (int i = 0; i < state.Count; i++) {
           CharaSprite.Bounds = RectF(layData.TextureCoords[i].x,
                                      layData.TextureCoords[i].y, 30.0f, 30.0f);
-          const glm::vec2 pos = layData.ScreenCoords[i] + Position;
-          const RectF dest(pos.x, pos.y, 30.0f, 30.0f);
+          const glm::vec2 pos = layData.ScreenCoords[i] / assetScale + Position;
+          const RectF dest(pos.x, pos.y, chunkSize, chunkSize);
 
           Renderer->DrawSprite(CharaSprite, dest, transformation, Tint);
         }
