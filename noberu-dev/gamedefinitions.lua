@@ -6,3 +6,9 @@ root.GameDefinitions.sgps3 = {
   LauncherOrderId = 9,
   GameProfile = root.BasePaths.RootProfilesDir .. "/sgps3/game.lua",
 };
+
+root.GameDefinitions.sgsteam = {
+  Name = "STEINS;GATE (Steam)",
+  LauncherOrderId = 10,
+  GameProfile = root.BasePaths.RootProfilesDir .. "/sgsteam/game.lua",
+};

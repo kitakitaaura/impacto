@@ -32,6 +32,11 @@ inline float LayFileTexYMultiplier;
 inline float DesignWidth;
 inline float DesignHeight;
 
+// Texture pixels per design unit for backgrounds and characters. A port whose
+// art was redrawn at a higher resolution than its script coordinates (Steam
+// STEINS;GATE: 1920x1080 art, 1280x720 scripts) sets this above 1.
+inline float AssetScale = 1.0f;
+
 inline int PlatformId = 0;
 
 inline bool HasInit = false;

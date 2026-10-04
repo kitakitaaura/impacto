@@ -17,6 +17,7 @@
 #include "opcodetables_dash.h"
 #include "opcodetables_cc.h"
 #include "opcodetables_sgps3.h"
+#include "opcodetables_sghd.h"
 #include "opcodetables_chn.h"
 #include "opcodetables_lccswitch.h"
 #include "../profile/game.h"
@@ -123,6 +124,12 @@ void Init() {
       OpcodeTableUser1 = OpcodeTableUser1_SGPS3;
       break;
     }
+    case InstructionSet::SGHD: {
+      OpcodeTableSystem = OpcodeTableSystem_SGHD;
+      OpcodeTableGraph = OpcodeTableGraph_SGHD;
+      OpcodeTableUser1 = OpcodeTableUser1_SGHD;
+      break;
+    }
     case InstructionSet::MO8: {
       OpcodeTableSystem = OpcodeTableSystem_MO8;
       OpcodeTableGraph = OpcodeTableGraph_MO8;
@@ -190,8 +197,9 @@ void Init() {
 bool LoadScript(uint32_t bufferId, uint32_t scriptId) {
   Io::FileMeta meta;
   Io::VfsGetMeta("script", scriptId, &meta);
-  ImpLogSlow(LogLevel::Debug, LogChannel::VM, "Loading script \"{:s}\"\n",
-             meta.FileName);
+  ImpLog(LogLevel::Trace, LogChannel::VM,
+         "Loading script \"{:s}\" (id {:d}) into buffer {:d}\n",
+         meta.FileName, scriptId, bufferId);
 
   void* file;
   int64_t fileSize;

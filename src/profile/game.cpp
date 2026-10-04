@@ -31,6 +31,7 @@ void Configure() {
   TryGetMember<bool>("UseWaveEffects", UseWaveEffects);
 
   TryGetMember<int>("PlatformId", PlatformId);
+  TryGetMember<float>("AssetScale", AssetScale);
 
   HasInit = true;
 }

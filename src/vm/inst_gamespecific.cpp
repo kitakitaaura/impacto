@@ -1504,6 +1504,114 @@ VmInstruction(InstLaunchApp) {
   PopExpression(appId);
 }
 
+VmInstruction(InstNopSGHD) { StartInstruction; }
+
+// 01:08, 01:0A, 10:1A, 10:3F: one byte operand.
+VmInstruction(InstByteArgSGHD) {
+  StartInstruction;
+  PopUint8(arg);
+  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+             "STUB instruction {:02x}:{:02x}(arg: {:d})\n", _oldIp[0] & 0x7F,
+             _oldIp[1], arg);
+}
+
+VmInstruction(InstUnk004CSGHD) {
+  StartInstruction;
+  PopUint8(type);
+  if (type == 0) {
+    PopExpression(arg);
+  }
+  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+             "STUB instruction Unk004C(type: {:d})\n", type);
+}
+
+VmInstruction(InstCallFarIfFlagSGHD) {
+  StartInstruction;
+  PopUint8(value);
+  PopExpression(flagId);
+  PopExpression(scriptBufferId);
+  PopFarLabel(labelAdr, scriptBufferId);
+  PopUint16(retNum);
+  if (GetFlag(flagId) != (bool)value) return;
+  if (thread->CallStackDepth == MaxCallStackDepth) {
+    ImpLog(LogLevel::Error, LogChannel::VM,
+           "CallFarIfFlag error, call stack overflow.\n");
+    return;
+  }
+  thread->ReturnIds[thread->CallStackDepth] = retNum;
+  thread->ReturnScriptBufferIds[thread->CallStackDepth++] =
+      thread->ScriptBufferId;
+  thread->IpOffset = labelAdr;
+  thread->ScriptBufferId = scriptBufferId;
+}
+
+VmInstruction(InstCallIfFlagSGHD) {
+  StartInstruction;
+  PopUint8(value);
+  PopExpression(flagId);
+  PopLocalLabel(labelAdr);
+  PopUint16(retNum);
+  if (GetFlag(flagId) != (bool)value) return;
+  if (thread->CallStackDepth == MaxCallStackDepth) {
+    ImpLog(LogLevel::Error, LogChannel::VM,
+           "CallIfFlag error, call stack overflow.\n");
+    return;
+  }
+  thread->ReturnIds[thread->CallStackDepth] = retNum;
+  thread->ReturnScriptBufferIds[thread->CallStackDepth++] =
+      thread->ScriptBufferId;
+  thread->IpOffset = labelAdr;
+}
+
+// Named "UselessJump" by sc3ntist; never observed to jump.
+VmInstruction(InstUselessJumpSGHD) {
+  StartInstruction;
+  PopUint8(cond);
+  if (cond == 0 || cond == 2 || cond == 3) {
+    PopUint16(target);
+    PopUint16(unk1);
+  }
+  if (cond == 3) {
+    PopUint16(unk2);
+  }
+  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+             "STUB instruction UselessJump(cond: {:d})\n", cond);
+}
+
+VmInstruction(InstUnk0106SGHD) {
+  StartInstruction;
+  PopUint8(type);
+  if (type == 1) {
+    PopExpression(dest);
+  }
+  PopExpression(arg1);
+  PopExpression(arg2);
+  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+             "STUB instruction Unk0106(type: {:d})\n", type);
+}
+
+VmInstruction(InstUnk0107SGHD) {
+  StartInstruction;
+  PopExpression(arg1);
+  PopExpression(arg2);
+  PopExpression(unused);
+  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+             "STUB instruction Unk0107\n");
+}
+
+VmInstruction(InstCheckpointSGHD) {
+  StartInstruction;
+  PopUint8(type);
+  if (type == 0 || type == 1) {
+    PopUint16(checkpointId);
+  }
+  if (type == 1 || type == 2) {
+    PopExpression(arg);
+  }
+  ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+             "STUB instruction Checkpoint(type: {:d})\n", type);
+}
+
 }  // namespace Vm
 
 }  // namespace Impacto

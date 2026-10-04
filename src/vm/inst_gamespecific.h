@@ -28,6 +28,18 @@ VmInstruction(InstMapSystem);
 VmInstruction(InstPhoneSG);
 VmInstruction(InstMail);
 VmInstruction(InstMtrg);
+
+// STEINS;GATE Steam (SGHD). Operand layouts follow CoZ's sc3ntist SGHD
+// decoder; behaviour is unknown unless noted, so most only consume operands.
+VmInstruction(InstNopSGHD);
+VmInstruction(InstByteArgSGHD);
+VmInstruction(InstUnk004CSGHD);
+VmInstruction(InstCallFarIfFlagSGHD);
+VmInstruction(InstCallIfFlagSGHD);
+VmInstruction(InstUselessJumpSGHD);
+VmInstruction(InstUnk0106SGHD);
+VmInstruction(InstUnk0107SGHD);
+VmInstruction(InstCheckpointSGHD);
 VmInstruction(InstUnk1038Darling);
 VmInstruction(InstUnk1038MO7);
 VmInstruction(InstTwipo);

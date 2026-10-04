@@ -609,6 +609,9 @@ VmInstruction(InstTitleMenuNew) {
 }
 VmInstruction(InstTitleMenuOld) {
   StartInstruction;
+  if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
+    PopUint8(arg1);
+  }
 
   if (UI::TitleMenuPtr == nullptr) return;
 

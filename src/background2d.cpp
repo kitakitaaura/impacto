@@ -179,8 +179,9 @@ void Background2D::MainThreadOnLoad(bool result) {
     BgSprite.Sheet.DesignWidth = Profile::Game::DesignWidth;
     BgSprite.Sheet.DesignHeight = Profile::Game::DesignHeight;
   } else {
-    BgSprite.Sheet.DesignWidth = (float)BgTexture.Width;
-    BgSprite.Sheet.DesignHeight = (float)BgTexture.Height;
+    BgSprite.Sheet.DesignWidth = BgTexture.Width / Profile::Game::AssetScale;
+    BgSprite.Sheet.DesignHeight =
+        BgTexture.Height / Profile::Game::AssetScale;
   }
 
   BgSprite.BaseScale = glm::vec2(1.0f);
