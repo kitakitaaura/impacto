@@ -10,8 +10,8 @@ include(root.BasePaths.RootProfilesDir .. '/sgps3/game.lua');
 -- Script variables: Steam S;G uses the same map as Chaos;Head Noah (common +
 -- chn overrides), not the PS3 one. Its BG macros write SW[4500 + 40*bg] (main),
 -- SW[2400 + 10*bg] (offsets), SW[5000 + 20*bg] (captures) and the logo fades
--- use SW 4400/4401 (MASK1COLOR/ALPHA). Re-including common resets the table.
-include(root.BasePaths.RootProfilesDir .. '/common/scriptvars.lua');
+-- use SW 4400/4401 (MASK1COLOR/ALPHA).
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/scriptvars.lua');
 include(root.BasePaths.RootProfilesDir .. '/chn/scriptvars.lua');
 -- Steam S;G has no message-window type flags; the common index (4422) is a
 -- mask field here (MACROSYS sets SW 4422 = 100), which read as DontDrawText.
@@ -21,6 +21,7 @@ include(root.BasePaths.RootProfilesDir .. '/sgsteam/vfs.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/sprites.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/font.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/charset.lua');
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/dialogue.lua');
 
 root.WindowName = "STEINS;GATE";
 
