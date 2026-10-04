@@ -385,6 +385,19 @@ static void DrawAllThreads() {
     }
     cnt++;
   }
+
+  static std::string lastDrawList;
+  std::string drawList;
+  for (int i = 0; i < cnt; i++) {
+    if (Game::DrawComponents[i] == Game::DrawComponentType::None) continue;
+    drawList += fmt::format("{}:{:x} ", ThreadTable[i]->Id,
+                            +Game::DrawComponents[i]);
+  }
+  if (drawList != lastDrawList) {
+    ImpLog(LogLevel::Trace, LogChannel::VM, "Draw list (thread:type): {}\n",
+           drawList);
+    lastDrawList = std::move(drawList);
+  }
 }
 
 void DestroyThread(Sc3VmThread* thread) {

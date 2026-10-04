@@ -356,12 +356,19 @@ void BacklogMenu<EntryType>::AddMessage(Vm::BufferOffsetContext scrCtx,
                                         std::optional<int> audioId,
                                         int characterId) {
   if (GetFlag(SF_REVADDDISABLE)) return;
+  // Profiles with BacklogMenuType::None never size the buffer; a zero-capacity
+  // circular buffer reports full() and back() would read garbage.
+  if (Entries.capacity() == 0) return;
 
   auto onClick = [this](auto* btn) { return MenuButtonOnClick(btn); };
 
+  // A previous entry can have no glyphs (e.g. an empty line); fall back to
+  // its bounds instead of reading past an empty vector.
   const glm::vec2 entryPos =
-      Entries.empty()
-          ? EntriesStart
+      Entries.empty() ? EntriesStart
+      : Entries.front().Page.Glyphs.empty()
+          ? glm::vec2(EntriesStart.x,
+                      Entries.front().Bounds.Bottom() + EntryYPadding)
           : glm::vec2(EntriesStart.x,
                       Entries.front().Page.Glyphs.back().DestRect.Bottom() +
                           EntryYPadding);

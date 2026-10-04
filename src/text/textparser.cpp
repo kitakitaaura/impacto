@@ -219,13 +219,20 @@ void TextParser::ParseStringToken<STT_Character>(const StringToken& token) {
               +CharacterTypeFlags::WordEndingPunct |
               +CharacterTypeFlags::Alphabet;
 
+          // A space is always a break point, even when the script's
+          // SetNGmoji lists it as punctuation (STEINS;GATE Steam adds the
+          // space to both lists, which left English text with no breaks).
+          constexpr uint8_t spaceFlag = +CharacterTypeFlags::Space;
+          const uint8_t prevFlags =
+              breakCharacter < 1
+                  ? 0
+                  : StringToken::GetFlags(Glyphs[breakCharacter - 1].CharId);
+          const uint8_t curFlags =
+              StringToken::GetFlags(Glyphs[breakCharacter].CharId);
           const bool prevCharacterAllowsBreak =
-              breakCharacter < 1 ||
-              !(StringToken::GetFlags(Glyphs[breakCharacter - 1].CharId) &
-                dontBreakBeforeFlags);
+              (prevFlags & spaceFlag) || !(prevFlags & dontBreakBeforeFlags);
           const bool curCharacterAllowsBreak =
-              !(StringToken::GetFlags(Glyphs[breakCharacter].CharId) &
-                dontBreakOnFlags);
+              (curFlags & spaceFlag) || !(curFlags & dontBreakOnFlags);
 
           if (prevCharacterAllowsBreak && curCharacterAllowsBreak) {
             break;

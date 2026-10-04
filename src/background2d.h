@@ -118,6 +118,7 @@ class Background2D : public Loadable<Background2D, bool, uint32_t> {
   void RenderCaptureMasked();
   void RenderMaskedInverted();
   void RenderFade();
+  void InvokeRenderProc();
   void RenderExplode();
   template <bool PhaseZero>
   void RenderBgWave();
