@@ -509,7 +509,7 @@ void RunThread(Sc3VmThread* thread, float dt) {
         OpcodeTableTitleOnly[opcode](thread, dt);
       } else if (opcodeGrp1 == 0x10) {
         OpcodeTableUser1[opcode](thread, dt);
-      } else if (opcodeGrp1 == 0x02) {
+      } else if (opcodeGrp1 == 0x02 && OpcodeTableGraph3D) {
         OpcodeTableGraph3D[opcode](thread, dt);
       } else if (opcodeGrp1 == 0x01) {
         OpcodeTableGraph[opcode](thread, dt);

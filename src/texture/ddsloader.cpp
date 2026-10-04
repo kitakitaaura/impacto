@@ -103,15 +103,17 @@ typedef struct {
   dds_caps caps;      ///< DirectDraw Surface caps
 } dds_header;
 
-std::vector<uint8_t> m_buf;  ///< Buffer the image pixels
-int m_nchans;                ///< Number of colour channels in image
-int m_nfaces;                ///< Number of cube map sides in image
-int m_Bpp;                   ///< Number of bytes per pixel
-int m_redL, m_redR;          ///< Bit shifts to extract red channel
-int m_greenL, m_greenR;      ///< Bit shifts to extract green channel
-int m_blueL, m_blueR;        ///< Bit shifts to extract blue channel
-int m_alphaL, m_alphaR;      ///< Bit shifts to extract alpha channel
-dds_header m_dds;
+// Per-thread: sprite sheets are loaded concurrently (std::async), and shared
+// state let two DDS loads overwrite each other's header mid-decode.
+thread_local std::vector<uint8_t> m_buf;  ///< Buffer the image pixels
+thread_local int m_nchans;  ///< Number of colour channels in image
+thread_local int m_nfaces;  ///< Number of cube map sides in image
+thread_local int m_Bpp;     ///< Number of bytes per pixel
+thread_local int m_redL, m_redR;      ///< Bit shifts to extract red channel
+thread_local int m_greenL, m_greenR;  ///< Bit shifts to extract green channel
+thread_local int m_blueL, m_blueR;    ///< Bit shifts to extract blue channel
+thread_local int m_alphaL, m_alphaR;  ///< Bit shifts to extract alpha channel
+thread_local dds_header m_dds;
 
 inline void calc_shifts(int mask, int& left, int& right) {
   if (mask == 0) {

@@ -24,7 +24,10 @@ root.SysMesBoxDisplay = {
     HighlightRightPartSpriteWidth = 24,
     AnimationSpeed = 55,
     FadeInDuration = 0.33,
-    FadeOutDuration = 0.25
+    FadeOutDuration = 0.25,
+    -- Required by the shared CHLCC SysMesBox; S;G has no loading stars.
+    LoadingStarsPosition = { X = 0, Y = 0 },
+    LoadingStarsFadeDuration = 0
 };
 
 root.Sprites[name .. "Box"] = {
@@ -81,3 +84,8 @@ root.Sprites[name .. "SelectionMiddlePart"] = {
     }
 };
 root.SysMesBoxDisplay.SelectionMiddlePart = name .. "SelectionMiddlePart";
+root.Sprites[name .. "LoadingStar"] = {
+    Sheet = sheet,
+    Bounds = { X = 0, Y = 0, Width = 0, Height = 0 }
+};
+root.SysMesBoxDisplay.LoadingStar = name .. "LoadingStar";
