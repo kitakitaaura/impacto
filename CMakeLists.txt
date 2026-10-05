@@ -972,14 +972,17 @@ if (NOT DEFINED IMPACTO_DISABLE_OPENAL)
     list(APPEND Impacto_Src
         src/audio/openal/audiobackend.cpp
         src/audio/openal/openalaudiochannel.cpp
-        src/audio/openal/ffmpegaudioplayer.cpp
     )
     list(APPEND Impacto_Header
         src/audio/openal/audiobackend.h
         src/audio/openal/openalaudiochannel.h
         src/audio/openal/audiocommon.h
-        src/audio/openal/ffmpegaudioplayer.h
     )
+    # Plays video soundtracks; only meaningful with the FFmpeg video player.
+    if (NOT DEFINED IMPACTO_DISABLE_FFMPEG)
+        list(APPEND Impacto_Src src/audio/openal/ffmpegaudioplayer.cpp)
+        list(APPEND Impacto_Header src/audio/openal/ffmpegaudioplayer.h)
+    endif ()
 
     list(APPEND Impacto_Include_Dirs ${OPENAL_INCLUDE_DIR})
 endif ()

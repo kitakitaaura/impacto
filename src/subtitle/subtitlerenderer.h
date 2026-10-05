@@ -1,8 +1,10 @@
 #pragma once
 
 #include <vector>
-#include <libavcodec/avcodec.h>
-#include <avcpp/timestamp.h>
+#include <array>
+#include <chrono>
+#include <span>
+#include <string>
 #include <ankerl/unordered_dense.h>
 #include <memory>
 #include <concepts>
