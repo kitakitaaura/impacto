@@ -50,7 +50,8 @@ void LoadSpritesheets() {
       }
 
       futures.emplace_back(std::tuple(
-          name, std::async(std::launch::async, LoadTexture, stream, name)));
+          name, std::async(IMPACTO_HAVE_THREADS ? std::launch::async : std::launch::deferred,
+                     LoadTexture, stream, name)));
     }
     Pop();
   }

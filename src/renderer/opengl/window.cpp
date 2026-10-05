@@ -140,6 +140,11 @@ void GLWindow::Init() {
     return;
   }
 
+#ifdef __EMSCRIPTEN__
+  // Any request yields WebGL 2 (= GLES 3.0); claiming desktop GL would pick
+  // the desktop GLSL header and GLAD loader.
+  TryCreateGL(GfxApi_ForceNativeGLES);
+#else
   switch (GraphicsApiHint) {
     case GfxApi_GL:
       TryCreateGL(GfxApi_GL);
@@ -157,6 +162,7 @@ void GLWindow::Init() {
       TryCreateGL(GfxApi_GL);
       break;
   }
+#endif
 
   if (GLContext == NULL) {
     ImpLog(LogLevel::Fatal, LogChannel::General,

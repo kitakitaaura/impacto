@@ -1,5 +1,9 @@
 #include "savesystem.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "../../io/stream.h"
 #include "../../io/physicalfilestream.h"
 #include "../../mem.h"
@@ -660,6 +664,10 @@ SaveError SaveSystem::WriteSaveFile() {
     }
   }
   delete stream;
+#ifdef __EMSCRIPTEN__
+  // The page persists /saves (IndexedDB) after every write.
+  EM_ASM(if (Module.onSaveWritten) Module.onSaveWritten(););
+#endif
   return SaveError::OK;
 }
 

@@ -42,10 +42,12 @@ void LauncherLoop() {
 }
 
 #ifdef EMSCRIPTEN
-extern "C" void EMSCRIPTEN_KEEPALIVE StartGame() {
-  t = SDL_GetPerformanceCounter();
-  emscripten_set_main_loop(GameLoop, -1, 0);
-}
+// The web build runs the same blocking loop as desktop and yields to the
+// browser once per animation frame; archive reads in between await Blob slices
+// (ASYNCIFY), which emscripten_set_main_loop callbacks cannot do.
+EM_ASYNC_JS(void, noberu_wait_frame, (), {
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+});
 #endif
 
 template <typename T>
@@ -167,7 +169,7 @@ static void HandleArguments(std::vector<std::string_view> args) {
 
 int main(int argc, char* argv[]) {
 #ifdef EMSCRIPTEN
-  EM_ASM(OnGameLoadStart(););
+  EM_ASM(if (Module.onGameLoadStart) Module.onGameLoadStart(););
 #endif
 #ifdef _WIN32
   if (AttachConsole(ATTACH_PARENT_PROCESS)) {
@@ -227,7 +229,13 @@ int main(int argc, char* argv[]) {
     Game::Init();
 
 #ifdef EMSCRIPTEN
-    EM_ASM(OnGameLoaded(););
+    Game::InitGameProfile();
+    EM_ASM(if (Module.onGameLoaded) Module.onGameLoaded(););
+    t = SDL_GetPerformanceCounter();
+    while (!Game::ShouldQuit) {
+      GameLoop();
+      noberu_wait_frame();
+    }
 #else
     t = SDL_GetPerformanceCounter();
 

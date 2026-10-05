@@ -300,3 +300,5 @@ noberu-dev/basepaths.gen.lua
 noberu-dev/saves/
 noberu-dev/*.log
 noberu-dev/devinput.txt
+noberu-dev/wasm/out/
+noberu-dev/wasm/vcpkg_installed/

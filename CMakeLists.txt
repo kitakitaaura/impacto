@@ -24,6 +24,10 @@ find_package(PkgConfig)
 
 if (EMSCRIPTEN)
     list(APPEND CMAKE_MODULE_PATH ${EMSCRIPTEN_ROOT_PATH}/cmake/Modules)
+    # impacto reports profile/IO failures with exceptions; Emscripten only
+    # catches them with -fexceptions (JS-based, works with ASYNCIFY).
+    add_compile_options(-fexceptions)
+    add_link_options(-fexceptions)
 endif ()
 
 set(Impacto_Src
@@ -359,6 +363,7 @@ set(Impacto_Src
     src/io/assetpath.cpp
     src/io/memorystream.cpp
     src/io/physicalfilestream.cpp
+    src/io/webfilestream.cpp
     src/io/uncompressedstream.cpp
     src/io/zlibstream.cpp
     src/io/vfsarchive.cpp
@@ -737,6 +742,7 @@ set(Impacto_Header
     src/io/dummystream.h
     src/io/memorystream.h
     src/io/physicalfilestream.h
+    src/io/webfilestream.h
     src/io/uncompressedstream.h
     src/io/zlibstream.h
     src/io/vfsarchive.h
@@ -896,6 +902,10 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 
+if (EMSCRIPTEN)
+    # One wasm module: no dynamic libraries.
+    set(LIBATRAC9_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+endif ()
 FetchContent_MakeAvailable(libatrac9)
 FetchContent_MakeAvailable(magic_enum)
 
@@ -963,11 +973,15 @@ endif ()
 
 
 if (NOT DEFINED IMPACTO_DISABLE_OPENAL)
-    find_package(OpenAL CONFIG REQUIRED)
-
-    list(APPEND Impacto_Libs
-            ${OPENAL_LIBRARY}
-    )
+    if (EMSCRIPTEN)
+        # Emscripten ships OpenAL on top of Web Audio (-lopenal at link time).
+        list(APPEND Impacto_Libs openal)
+    else ()
+        find_package(OpenAL CONFIG REQUIRED)
+        list(APPEND Impacto_Libs
+                ${OPENAL_LIBRARY}
+        )
+    endif ()
 
     list(APPEND Impacto_Src
         src/audio/openal/audiobackend.cpp
@@ -987,45 +1001,6 @@ if (NOT DEFINED IMPACTO_DISABLE_OPENAL)
     list(APPEND Impacto_Include_Dirs ${OPENAL_INCLUDE_DIR})
 endif ()
 
-if (EMSCRIPTEN)
-    # BINARYEN_TRAP_MODE=clamp => https://groups.google.com/forum/#!topic/emscripten-discuss/IJr4ApiW_zU
-    # duk_heap_alloc() errors without this
-    # MAIN_MODULE=1 => SDL_GL_GetProcAddress falls back to dlsym() so we need dynamic linking support (...)
-
-    set(IMPACTO_EMSCRIPTEN_BUILD_FLAGS "\
-        -s USE_SDL=3 \
-        -s USE_ZLIB=1 \
-        -s USE_OGG=1 \
-        -s USE_VORBIS=1 \
-        -s WASM=1 \
-        -s USE_WEBGL2=1 \
-        -s MAIN_MODULE=2 \
-        -s BINARYEN_TRAP_MODE=clamp \
-        -s ALLOW_MEMORY_GROWTH=1 \
-        -g4 \
-        --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/profiles@/profiles \
-        --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/games@/games \
-        --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders@/shaders \
-    ")
-    if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-        set(IMPACTO_EMSCRIPTEN_BUILD_FLAGS "${IMPACTO_EMSCRIPTEN_BUILD_FLAGS} \
-            -s GL_ASSERTIONS=1 \
-            -s GL_DEBUG=1 \
-        ")
-    else ()
-        set(IMPACTO_EMSCRIPTEN_BUILD_FLAGS "${IMPACTO_EMSCRIPTEN_BUILD_FLAGS} \
-            -O3 \
-        ")
-    endif ()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${IMPACTO_EMSCRIPTEN_BUILD_FLAGS}")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${IMPACTO_EMSCRIPTEN_BUILD_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${IMPACTO_EMSCRIPTEN_BUILD_FLAGS}")
-
-    string(REPLACE "-O2" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    string(REPLACE "-O2" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-    string(REPLACE "-O2" "" CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE}")
-    add_definitions(-DIMPACTO_OPENAL_HAVE_ALEXT)
-else ()
     find_package(SDL3 CONFIG REQUIRED)
     find_package(ZLIB REQUIRED)
 
@@ -1057,7 +1032,6 @@ else ()
     endif ()
 
     add_definitions(-DIMPACTO_OPENAL_HAVE_ALEXT)
-endif ()
 
 list(APPEND Impacto_Include_Dirs ${SDL3_INCLUDE_DIRS})
 list(APPEND Impacto_Include_Dirs ${WebP_INCLUDE_DIRS})
@@ -1347,6 +1321,26 @@ endIf()
 list(APPEND Impacto_Libs ${Impacto_Lib_Targets})
 target_link_libraries(impacto PRIVATE ${Impacto_Libs})
 
+if (EMSCRIPTEN)
+    # noberu web build (noberu-dev/wasm/build.sh). Single-threaded: the engine
+    # loop yields per animation frame and awaits Blob slices of the user's game
+    # files (src/io/webfilestream.cpp) through ASYNCIFY.
+    target_link_options(impacto PRIVATE
+        -sASYNCIFY -sASYNCIFY_STACK_SIZE=131072
+        -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3
+        -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=256MB -sMAXIMUM_MEMORY=4GB
+        -sSTACK_SIZE=4MB
+        -sMODULARIZE -sEXPORT_NAME=createImpacto -sINVOKE_RUN=0
+        -sFORCE_FILESYSTEM -lidbfs.js
+        "-sEXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS,UTF8ToString"
+        -sENVIRONMENT=web
+        "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/profiles@/profiles"
+        "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/opengl@/shaders/opengl"
+        "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/noberu-dev/wasm/config@/web"
+        --profiling-funcs
+    )
+endif ()
+
 target_compile_options(impacto PRIVATE "$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 target_compile_options(impacto PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
@@ -1378,7 +1372,7 @@ if(NOT IMPACTO_ASAN)
 endif()
 
 if (EMSCRIPTEN)
-    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    set(CMAKE_EXECUTABLE_SUFFIX ".js")
 endif ()
 
 if (NX)
@@ -1429,7 +1423,9 @@ target_precompile_headers(impacto PRIVATE
 
 # binary install
 
-if (ANDROID)
+if (EMSCRIPTEN)
+    # The web build is packaged by noberu-dev/wasm/build.sh.
+elseif (ANDROID)
     install(TARGETS impacto LIBRARY DESTINATION ${CMAKE_SOURCE_DIR}/android/app/src/main/jniLibs/${CMAKE_ANDROID_ARCH_ABI})
 elseif (NX)
     find_program(ELF2NRO elf2nro HINTS "$ENV{DEVKITPRO}/tools/bin")

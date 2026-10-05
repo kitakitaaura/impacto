@@ -3,7 +3,9 @@
 #include "../util.h"
 #include <deque>
 #include <mutex>
+#if IMPACTO_HAVE_THREADS
 #include <shared_mutex>
+#endif
 #include <ranges>
 #include "vfsarchive.h"
 #include "memorystream.h"
@@ -13,6 +15,7 @@
 #ifndef IMPACTO_DISABLE_MMAP
 #include "memorymappedfilestream.h"
 #else
+#include "webfilestream.h"
 #include "physicalfilestream.h"
 #endif
 
@@ -46,7 +49,20 @@ struct ArchiveList : public std::deque<std::unique_ptr<VfsArchive>> {
 static ankerl::unordered_dense::map<std::string, ArchiveList, string_hash,
                                     std::equal_to<>>
     Mounts;
+#if IMPACTO_HAVE_THREADS
 static std::shared_mutex Lock;
+using ReadLock = std::shared_lock<std::shared_mutex>;
+#else
+// Single-threaded builds (browser): libc++ has no shared_mutex without threads.
+struct NoLock {
+  void lock() {}
+  void unlock() {}
+};
+static NoLock Lock;
+struct ReadLock {
+  explicit ReadLock(NoLock&) {}
+};
+#endif
 
 static IoError MountInternal(std::string const& mountpoint, Stream* stream,
                              bool invertMountOrder = false,
@@ -146,7 +162,12 @@ IoError VfsMount(std::string const& mountpoint,
     err = MemoryMappedFileStream<AccessMode::read>::Create(archiveFileName,
                                                            &archiveFile);
 #else
-    err = PhysicalFileStream::Create(archiveFileName, &archiveFile);
+#ifdef __EMSCRIPTEN__
+    // Game archives are the user's picked files, read on demand.
+    err = WebFileStream::Create(archiveFileName, &archiveFile);
+    if (err == IoError_NotFound)
+#endif
+      err = PhysicalFileStream::Create(archiveFileName, &archiveFile);
 #endif
     if (err != IoError_OK) {
       ImpLog(LogLevel::Debug, LogChannel::IO,
@@ -255,7 +276,7 @@ IoError VfsGetMetaImpl(std::string const& mountpoint, T file,
 
   FileMeta* origMeta;
   VfsArchive* archive;
-  std::shared_lock lock{Lock};
+  ReadLock lock{Lock};
   err = GetOrigMetaInternal(mountpoint, file, origMeta, archive);
   if (err != IoError_OK) {
     ImpLog(LogLevel::Error, LogChannel::IO, "Could not get metadata\n");
@@ -388,7 +409,7 @@ IoError VfsSlurpImpl(std::string const& mountpoint, T fileName,
 IoError VfsListFiles(std::string const& mountpoint,
                      std::map<uint32_t, std::string>& outListing) {
   IoError err;
-  std::shared_lock lock{Lock};
+  ReadLock lock{Lock};
 
   auto it = Mounts.find(mountpoint);
   if (it == Mounts.end()) {

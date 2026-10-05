@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>impacto web test</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #000; color: #ddd; font: 14px system-ui, sans-serif; }
+  #picker { padding: 16px; }
+  #canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+  #status { position: fixed; left: 8px; bottom: 8px; opacity: .7; }
+</style>
+</head>
+<body>
+<div id="picker">
+  <p>Pick your STEINS;GATE install folder (the one containing <code>USRDIR</code>).</p>
+  <input id="folder" type="file" webkitdirectory>
+</div>
+<canvas id="canvas" tabindex="0" hidden></canvas>
+<div id="status"></div>
+<script src="impacto.js"></script>
+<script src="impacto-web.js"></script>
+</body>
+</html>

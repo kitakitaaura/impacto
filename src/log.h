@@ -135,7 +135,7 @@ constexpr std::optional<Impacto::LogChannel> Impacto::StringToChannel(
 }
 
 inline bool Impacto::GetDefaultLogToConsole() {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
   return true;
 #endif
   return false;
