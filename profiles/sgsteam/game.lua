@@ -46,7 +46,11 @@ root.Vm.ScrWorkBgEffStructSize = 30;
 root.Vm.ScrWorkBgEffOffsetStructSize = 20;
 root.Vm.GameInstructionSet = InstructionSet.SGHD;
 
-root.SaveData.SaveFilePath = root.BasePaths.RootSavesDir .. "/sgsteam/SYSTEM.DAT";
+root.SaveData.Type = SaveDataType.SGHD;
+root.SaveData.SaveFilePath = root.BasePaths.RootSavesDir .. "/sgsteam/SAVEDATA.DAT";
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/messagedata.lua');
 
 -- The PS3 profile borrows CHLCC's title menu; Steam gets its own.
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/titlemenu.lua');
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/savemenu.lua');
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/systemmenu.lua');

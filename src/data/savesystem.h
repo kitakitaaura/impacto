@@ -1,4 +1,6 @@
 #pragma once
+
+#include <optional>
 #include "../impacto.h"
 #include "../vm/vm.h"
 
@@ -20,6 +22,7 @@ enum class SaveDataType : int {
   CCLCC_PS4,
   CCLCC_SWITCH,
   MO6TW,
+  SGHD,
 };
 enum SaveFlagsMode { WriteProtect = 1 };
 
@@ -187,6 +190,15 @@ LoadStatus GetLoadStatus();
 void CheckSaveFile();
 void MountSaveFile();
 void SaveMemory();
+
+// Line to fast-skip to after loading a save that restarts at a checkpoint
+// (script id, line id). Message display forces skip until it is reached.
+struct ResumeLineTarget {
+  uint32_t ScriptId;
+  uint32_t LineId;
+  int SkippedLines = 0;
+};
+inline std::optional<ResumeLineTarget> ResumeLine;
 void SaveThumbnailData();
 void SaveSystemData();
 SaveError LoadSystemData();

@@ -507,6 +507,22 @@ VmInstruction(InstSave) {
 VmInstruction(InstSaveOld) {
   StartInstruction;
   PopUint8(type);
+  // STEINS;GATE Steam numbers these differently. Inferred from
+  // _STARTUP_WIN.SCX: boot runs 02/03 (check+wait), 04 (system data),
+  // 08/0A (mount+wait), 09/0A (write+wait); a save runs 10, 00, 3C/3D
+  // (write+wait). 0B/0C stay unknown no-ops.
+  if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
+    switch (type) {
+      case 0x02: type = 34; break;
+      case 0x03: type = 35; break;
+      case 0x04: type = 2; break;
+      case 0x08: type = 32; break;
+      case 0x0A: type = 33; break;
+      case 0x09: type = 30; break;
+      case 0x3C: type = 30; break;
+      case 0x3D: type = 31; break;
+    }
+  }
   switch (type) {
     // TODO: Types 1, 3, 4, 5, 10, 11, 12, 20, 21, 33, 36, 37, 52, 53
     case 0: {
@@ -1400,6 +1416,9 @@ VmInstruction(InstAutoSaveOld) {
     case 10: {  // SetCheckpointId
       if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
         PopUint16(checkpointId);
+        // Loading restarts the main thread at this checkpoint's return
+        // address (SCX return table), so the save must know it.
+        SaveSystem::SetCheckpointId(checkpointId);
       }
       BlockThread;
       SetFlag(SF_SAVECAPTURE, 1);

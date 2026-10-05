@@ -102,6 +102,8 @@ VmInstruction(InstSystemMenu) {
   switch (mode) {
     case 0:
       if (Profile::Vm::GameInstructionSet == InstructionSet::MO6TW) {
+      } else if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
+        UI::SystemMenuPtr->Init();
       } else if (Profile::Vm::GameInstructionSet == InstructionSet::CC ||
                  Profile::Vm::GameInstructionSet == InstructionSet::LCCSwitch) {
         auto* sysMenuPtr =
@@ -382,6 +384,8 @@ VmInstruction(InstSaveMenu) {
       UI::SaveMenuPtr->ActiveMenuType =
           magic_enum::enum_cast<UI::SaveMenuPageType>(arg1);
       ScrWork[SW_SAVEFILESTATUS] = 0;
+      if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD)
+        UI::SaveMenuPtr->Init();
 
       // Block input during animation
       if (UI::SaveMenuPtr->State == UI::MenuState::Hiding ||
@@ -402,6 +406,9 @@ VmInstruction(InstSaveMenu) {
                  "STUB instruction SaveMenu(type: SaveResetThumnail)\n");
       break;
     case 10:
+      if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD) {
+        PopUint8(arg1);
+      }
       ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
                  "STUB instruction SaveMenu(type: {:d})\n", type);
       break;

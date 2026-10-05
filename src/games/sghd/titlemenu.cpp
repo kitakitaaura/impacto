@@ -6,6 +6,7 @@
 #include "../../renderer/renderer.h"
 #include "../../vm/interface/input.h"
 #include "../../mem.h"
+#include "../../log.h"
 #include "../../inputsystem.h"
 
 #include <SDL3/SDL_stdinc.h>
@@ -39,9 +40,6 @@ void TitleMenu::Hide() {
 }
 
 bool TitleMenu::Pressed(uint32_t pad) const {
-  // Dev aid: IMPACTO_TITLE_AUTOSTART=1 confirms Press Enter and START.
-  static const bool autostart = SDL_getenv("IMPACTO_TITLE_AUTOSTART");
-  if (autostart && pad == PAD1A && MainCursor == 0) return true;
   return (PADinputButtonWentDown | PADinputMouseWentDown) & pad;
 }
 
@@ -70,6 +68,16 @@ void TitleMenu::Choose(int id) {
 
 void TitleMenu::ScriptTick(int mode) {
   Ticked = true;
+  // Dev aid: IMPACTO_TITLE_AUTOSTART=1 passes Press Enter and picks START;
+  // any other value is a title item id to pick (e.g. 11 = LOAD, 10 = QUICKLOAD).
+  static bool devPickRead = false;
+  if (!devPickRead) {
+    devPickRead = true;
+    if (const char* pick = SDL_getenv("IMPACTO_TITLE_AUTOSTART")) {
+      const int id = std::atoi(pick);
+      DevPick = id == 1 ? 0 : id;
+    }
+  }
   if (mode == 0) {
     CurStage = Stage::PressStart;
     return;
@@ -79,13 +87,18 @@ void TitleMenu::ScriptTick(int mode) {
   const int mainCount = (int)MainItems.size();
   switch (CurStage) {
     case Stage::PressStart:
-      if (Pressed(PAD1A) || Pressed(PAD1START)) {
+      if (Pressed(PAD1A) || Pressed(PAD1START) || DevPick) {
         CurStage = Stage::Main;
         SetFlag(SF_TITLEEND, true);
       }
       break;
 
     case Stage::Main: {
+      if (DevPick) {
+        Choose(*DevPick);
+        DevPick.reset();
+        break;
+      }
       if (Pressed(PAD1DOWN)) MainCursor = (MainCursor + 1) % mainCount;
       if (Pressed(PAD1UP)) MainCursor = (MainCursor + mainCount - 1) % mainCount;
       bool overItem = false;
@@ -105,11 +118,16 @@ void TitleMenu::ScriptTick(int mode) {
         } else {
           SubCursor = 0;
           CurStage = Stage::Sub;
+          SubJustOpened = true;
         }
       }
     } break;
 
     case Stage::Sub: {
+      if (SubJustOpened) {
+        SubJustOpened = PADinputMouseIsDown & PAD1A;  // wait for release
+        break;
+      }
       const auto& subs = MainItems[MainCursor].SubItems;
       const int subCount = (int)subs.size();
       if (Pressed(PAD1DOWN)) SubCursor = (SubCursor + 1) % subCount;

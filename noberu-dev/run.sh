@@ -6,6 +6,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEV="$ROOT/noberu-dev"
 mkdir -p "$DEV/saves"
 sed "s|@ROOT@|$ROOT|g" "$DEV/basepaths.lua" > "$DEV/basepaths.gen.lua"
+export IMPACTO_DEV_INPUT="${IMPACTO_DEV_INPUT:-$DEV/devinput.txt}"
 exec "$ROOT/install/Release/Impacto.app/Contents/MacOS/Impacto" \
   -bp "$DEV/basepaths.gen.lua" -gc "$DEV/gamedefinitions.lua" \
   -lf "$DEV/impacto.log" "$@"

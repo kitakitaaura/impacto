@@ -1,3 +1,5 @@
+#include "profile/data/savesystem.h"
+#include "devinput.h"
 #include "game.h"
 
 #include "text/dialoguepage.h"
@@ -174,6 +176,11 @@ void InitGameProfile() {
     Profile::SelectionMenu::Configure();
 
     SaveSystem::Init();
+    // STEINS;GATE Steam's executable loads the save file at startup; its
+    // scripts never ask for it.
+    if (Profile::SaveSystem::Type == SaveSystem::SaveDataType::SGHD) {
+      SaveSystem::MountSaveFile();
+    }
     AchievementSystem::Init();
     TipsSystem::Init();
     SaveIconDisplay::Init();
@@ -344,6 +351,7 @@ void UpdateSystem(float dt) {
   }
   if (+Profile::Game::GameFeatures & +GameFeature::Sc3VirtualMachine) {
     Vm::Interface::UpdatePADInput();
+    DevInput::Apply();
     Vm::Interface::UpdatePADHoldInput(updateInterval);
     Vm::Interface::UpdateKBHoldInput(updateInterval);
     UpdateGameState(updateInterval);

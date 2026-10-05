@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "../../ui/menu.h"
 #include "../../animation.h"
 
@@ -34,6 +36,9 @@ class TitleMenu : public Menu {
   int MainCursor = 0;
   int SubCursor = 0;
   bool Ticked = false;
+  // The click that opens a submenu must not also count as a click outside it.
+  bool SubJustOpened = false;
+  std::optional<int> DevPick;
 
   Animation FadeAnimation;
   Animation PressStartAnimation;

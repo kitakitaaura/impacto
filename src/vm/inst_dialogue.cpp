@@ -562,6 +562,22 @@ VmInstruction(InstMes) {
   ScrWork[2 * dialoguePage.Id + SW_LINEID] = lineId;
   ScrWork[2 * dialoguePage.Id + SW_SCRIPTID] = scriptId;
 
+  if (auto& resume = SaveSystem::ResumeLine) {
+    // Reached the saved line (or gave up): stop skipping so it plays normally.
+    if ((resume->ScriptId == scriptId && resume->LineId == lineId) ||
+        ++resume->SkippedLines > 3000) {
+      ImpLog(LogLevel::Debug, LogChannel::VM,
+             "Resume skip done at script {:d} line {:d} ({:d} lines)\n",
+             scriptId, lineId, resume->SkippedLines);
+      resume.reset();
+      SetFlag(SF_MESSKIP, false);
+      SetFlag(SF_MESALLSKIP, false);
+    } else {
+      SetFlag(SF_MESSKIP, true);
+      SetFlag(SF_MESALLSKIP, true);
+    }
+  }
+
   if (GetFlag(SF_MESALLSKIP)) {
     Audio::Channels[Audio::AC_VOICE0]->Stop(0.0f);
   }
@@ -1318,6 +1334,9 @@ void ChkMesSkip(float dt) {
       mesAllSkip = true;
     }
   }
+
+  // Fast-forwarding to the saved line after loading a checkpoint.
+  if (SaveSystem::ResumeLine) mesSkip = mesAllSkip = true;
 
   SetFlag(SF_MESSKIP, mesSkip);
   SetFlag(SF_MESALLSKIP, mesAllSkip);

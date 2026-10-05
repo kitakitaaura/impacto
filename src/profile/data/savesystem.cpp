@@ -6,6 +6,7 @@
 #include "../../games/cclcc/savesystem.h"
 #include "../../games/cclcc/savesystem_ps4.h"
 #include "../../games/cclcc/savesystem_switch.h"
+#include "../../games/sghd/savesystem.h"
 #include "../../games/chlcc/savesystem.h"
 #include "../../games/mo6tw/savesystem.h"
 
@@ -128,6 +129,9 @@ void Configure() {
       QuickDataPath = EnsureGetMember<std::string>("QuickDataPath");
 
       Implementation = new Impacto::CCLCC_Switch::SaveSystem();
+      break;
+    case SaveDataType::SGHD:
+      Implementation = new Impacto::SGHD::SaveSystem();
       break;
     case SaveDataType::None:
       ImpLog(LogLevel::Warning, LogChannel::Profile,

@@ -299,3 +299,4 @@ gamedata/
 noberu-dev/basepaths.gen.lua
 noberu-dev/saves/
 noberu-dev/*.log
+noberu-dev/devinput.txt
