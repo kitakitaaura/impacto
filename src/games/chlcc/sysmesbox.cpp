@@ -100,6 +100,13 @@ void SysMesBox::Show() {
   IsFocused = true;
   UI::FocusedMenu = this;
 
+  // Start with the first choice focused so keyboard/pad confirm works without
+  // pressing a direction first (pointer hover still moves focus).
+  if (ChoiceCount != 0 && !ChoiceItems->Children.empty()) {
+    CurrentlyFocusedElement = ChoiceItems->Children.front();
+    CurrentlyFocusedElement->HasFocus = true;
+  }
+
   LoadingStarsFadeAnimation.StartIn(true);
   for (SysMesBoxStar& star : LoadingStars) {
     star.Angle = ScrWorkAngleToRad(CALCrnd(8192) << 3);
