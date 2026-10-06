@@ -6,6 +6,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEV="$ROOT/noberu-dev"
 mkdir -p "$DEV/saves"
 sed "s|@ROOT@|$ROOT|g" "$DEV/basepaths.lua" > "$DEV/basepaths.gen.lua"
+# Muted by default for test runs; IMPACTO_MUTE=0 noberu-dev/run.sh for sound.
+export IMPACTO_MUTE="${IMPACTO_MUTE:-1}"
 export IMPACTO_DEV_INPUT="${IMPACTO_DEV_INPUT:-$DEV/devinput.txt}"
 exec "$ROOT/install/Release/Impacto.app/Contents/MacOS/Impacto" \
   -bp "$DEV/basepaths.gen.lua" -gc "$DEV/gamedefinitions.lua" \

@@ -27,6 +27,8 @@
       print: (t) => console.log(t),
       printErr: (t) => console.warn(t),
       preRun: [(m) => {
+        // ?mute=1: start silent (handy while testing).
+        if (new URLSearchParams(location.search).has('mute')) m.ENV.IMPACTO_MUTE = '1';
         m.FS.mkdir('/saves');
         m.FS.mount(m.IDBFS, {}, '/saves');
       }],

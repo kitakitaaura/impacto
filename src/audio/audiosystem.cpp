@@ -11,6 +11,7 @@
 #endif
 
 #include <utility>
+#include <SDL3/SDL_stdinc.h>
 
 namespace Impacto {
 namespace Audio {
@@ -159,6 +160,11 @@ void AudioShutdown() {
 void AudioInit() {
   assert(IsInit == false);
   ImpLog(LogLevel::Info, LogChannel::Audio, "Initialising audio system\n");
+
+  // Dev/test aid: IMPACTO_MUTE=1 starts silent (the web page sets it for ?mute).
+  if (const char* mute = SDL_getenv("IMPACTO_MUTE"); mute && *mute == '1') {
+    MasterVolume = 0.0f;
+  }
 
   switch (UserConfig::AdvancedSettings.ActiveAudioBackend) {
 #ifndef IMPACTO_DISABLE_OPENAL

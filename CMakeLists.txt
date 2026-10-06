@@ -1332,7 +1332,7 @@ if (EMSCRIPTEN)
         -sSTACK_SIZE=4MB
         -sMODULARIZE -sEXPORT_NAME=createImpacto -sINVOKE_RUN=0
         -sFORCE_FILESYSTEM -lidbfs.js
-        "-sEXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS,UTF8ToString"
+        "-sEXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS,ENV,UTF8ToString"
         -sENVIRONMENT=web
         "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/profiles@/profiles"
         "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/opengl@/shaders/opengl"
