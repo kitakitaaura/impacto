@@ -761,6 +761,28 @@ VmInstruction(InstPhoneSG) {
                  arg2);
       break;
     }
+    // STEINS;GATE Steam sub-types (operand layouts from CoZ's SGHD
+    // disassembler); consumed so the script stays in sync.
+    case 0x10:
+    case 0x1A: {
+      PopExpression(arg1);
+      ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+                 "STUB instruction Unk1037(type: {:d}, arg1: {:d})\n", type,
+                 arg1);
+      break;
+    }
+    case 0x14:
+    case 0x15: {
+      PopExpression(arg1);
+      PopExpression(arg2);
+      PopExpression(arg3);
+      PopExpression(arg4);
+      ImpLogSlow(LogLevel::Warning, LogChannel::VMStub,
+                 "STUB instruction Unk1037(type: {:d}, {:d}, {:d}, {:d}, "
+                 "{:d})\n",
+                 type, arg1, arg2, arg3, arg4);
+      break;
+    }
   }
 }
 VmInstruction(InstMail) {

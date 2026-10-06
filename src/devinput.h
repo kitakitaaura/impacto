@@ -9,6 +9,7 @@ namespace DevInput {
 //   move X Y      (design coordinates)
 //   click X Y     (left click at X Y)
 //   rclick X Y    (right click at X Y)
+//   hold NAME / release NAME   (keep a pad button down across frames)
 void Apply();
 
 }  // namespace DevInput

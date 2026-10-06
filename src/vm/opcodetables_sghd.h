@@ -573,7 +573,7 @@ InstructionProc inline constexpr OpcodeTableUser1_SGHD[256] = {
     InstLoadData,          // 10 24
     InstDummy,             // 10 25
     InstDummy,             // 10 26
-    InstEncyclopedia,      // 10 27
+    InstSetDic,            // 10 27  OpenTip: type, tip[, flag]
     InstSetPlayMode,       // 10 28
     InstSetEVflag,         // 10 29
     InstSetCutin,          // 10 2A
@@ -588,7 +588,7 @@ InstructionProc inline constexpr OpcodeTableUser1_SGHD[256] = {
     InstTips,              // 10 33
     InstTitleMenuOld,      // 10 34
     InstDummy,             // 10 35
-    InstBGeffect,          // 10 36
+    InstByteArgSGHD,       // 10 36  one byte, no effect on Steam
     InstPhoneSG,           // 10 37
     InstUnk1038Darling,    // 10 38
     InstTwipo,             // 10 39

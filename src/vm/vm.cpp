@@ -551,8 +551,19 @@ void RunThread(Sc3VmThread* thread, float dt) {
           ImpLog(LogLevel::Error, LogChannel::VM,
                  "Call stack empty, attempting instruction skip (will most "
                  "likely result in a hang).\n");
-          while (*(thread->GetIp()) != 0xFE) {
+          // Bounded: running past the buffer used to read off the end of
+          // memory (on the web that took the whole tab down).
+          const std::span<uint8_t> script =
+              ScriptBuffers[thread->ScriptBufferId];
+          while (thread->IpOffset < script.size() &&
+                 script[thread->IpOffset] != 0xFE) {
             thread->IpOffset++;
+          }
+          if (thread->IpOffset >= script.size()) {
+            ImpLog(LogLevel::Error, LogChannel::VM,
+                   "No recovery point; halting thread {:d}\n", thread->Id);
+            thread->IpOffset = scriptIp;
+            BlockCurrentScriptThread = 1;
           }
         }
       }

@@ -37,6 +37,10 @@ static void PointerAt(float x, float y) {
 void Apply() {
   static const char* path = SDL_getenv("IMPACTO_DEV_INPUT");
   if (!path) return;
+  // Buttons held across frames by "hold NAME" until "release NAME".
+  static uint32_t held = 0;
+  PADinputButtonIsDown |= held;
+
   std::ifstream file(path);
   if (!file) return;
   std::stringstream contents;
@@ -59,6 +63,12 @@ void Apply() {
       // Like a real key press: widgets ignore pad confirm while the pointer
       // is the active device.
       Input::CurrentInputDevice = Input::Device::Keyboard;
+    } else if (cmd == "hold" || cmd == "release") {
+      std::string name;
+      in >> name;
+      const uint32_t bit = PadBit(name);
+      held = cmd == "hold" ? held | bit : held & ~bit;
+      PADinputButtonIsDown |= held;
     } else if (cmd == "move" && (in >> x >> y)) {
       PointerAt(x, y);
     } else if (cmd == "click" && (in >> x >> y)) {

@@ -232,6 +232,11 @@ VmInstruction(InstCHAload) {
   PopUint8(arg1);
   PopExpression(bufferId);
   PopExpression(characterId);
+  // STEINS;GATE Steam: type 0 carries an unused uint16 after the operands.
+  if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD && arg1 == 0) {
+    PopUint16(unused);
+    (void)unused;
+  }
 
   const int actualBufId = GetBufferId(bufferId);
   const size_t chaStructOffset = ScrWorkChaStructSize * actualBufId;
