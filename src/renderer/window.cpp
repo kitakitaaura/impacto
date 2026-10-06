@@ -269,6 +269,12 @@ void BaseWindow::ClampAspectRatio(int boundW, int boundH) {
 void BaseWindow::SetWindowedSizing() {
   int top, left, bottom, right;
   SDL_SetWindowFullscreen(SDLWindow, false);
+#ifdef __EMSCRIPTEN__
+  // The page sizes the canvas with CSS; display bounds are empty here and
+  // would clamp the window (and every render target) to 0x0.
+  SDL_SetWindowSize(SDLWindow, WindowWidth, WindowHeight);
+  return;
+#endif
   SDL_Rect bounds = GetDisplayBounds(0);
   ClampAspectRatio(bounds.w, bounds.h);
   bool hasWindowBorders =

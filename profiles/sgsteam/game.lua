@@ -23,6 +23,11 @@ include(root.BasePaths.RootProfilesDir .. '/sgsteam/font.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/charset.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/dialogue.lua');
 
+-- The PC release uses Escape like right click: open the menu, or back out.
+for _, pad in ipairs({ root.PADinput.PAD1START, root.PADinput.PAD1B }) do
+    table.insert(root.Input.PADtoKBcustom[pad], { Id = 60, Mode = KbInputMode.Any });
+end
+
 root.WindowName = "STEINS;GATE";
 
 -- Steam .lay files: little-endian, texture coordinates already in pixels,

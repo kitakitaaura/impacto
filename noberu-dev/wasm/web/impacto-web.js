@@ -29,11 +29,6 @@
       preRun: [(m) => {
         m.FS.mkdir('/saves');
         m.FS.mount(m.IDBFS, {}, '/saves');
-        m.addRunDependency('saves');
-        m.FS.syncfs(true, (err) => {
-          if (err) console.warn('save restore failed', err);
-          m.removeRunDependency('saves');
-        });
       }],
       onGameLoaded: () => say(''),
       onSaveWritten: () => module.FS.syncfs(false, (err) => {
@@ -41,6 +36,11 @@
       }),
     };
     const module = await createImpacto(config);
+    // Restore saves before main() so the engine sees them at boot.
+    await new Promise((resolve) => module.FS.syncfs(true, (err) => {
+      if (err) console.warn('save restore failed', err);
+      resolve();
+    }));
     say('starting...');
     canvas.focus();
     // userconfig.toml lives with the saves so settings persist too.

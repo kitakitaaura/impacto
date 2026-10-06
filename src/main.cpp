@@ -5,7 +5,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
-#ifdef EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
 
@@ -41,7 +41,7 @@ void LauncherLoop() {
   Game::LauncherRender();
 }
 
-#ifdef EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
 // The web build runs the same blocking loop as desktop and yields to the
 // browser once per animation frame; archive reads in between await Blob slices
 // (ASYNCIFY), which emscripten_set_main_loop callbacks cannot do.
@@ -168,7 +168,7 @@ static void HandleArguments(std::vector<std::string_view> args) {
 };
 
 int main(int argc, char* argv[]) {
-#ifdef EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
   EM_ASM(if (Module.onGameLoadStart) Module.onGameLoadStart(););
 #endif
 #ifdef _WIN32
@@ -216,19 +216,12 @@ int main(int argc, char* argv[]) {
     }
   }
 
-#ifdef EMSCRIPTEN
-  // Emscripten's EGL requests a window framebuffer with antialiasing by default
-  // (as WebGL does)
-  // Emscripten's SDL port fails to change this even with MSAA set to 0 in the
-  // context parameters
-  EM_ASM(EGL.antialias = false;);
-#endif
   try {
     Profile::Init();
     Profile::Configure();
     Game::Init();
 
-#ifdef EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
     Game::InitGameProfile();
     EM_ASM(if (Module.onGameLoaded) Module.onGameLoaded(););
     t = SDL_GetPerformanceCounter();

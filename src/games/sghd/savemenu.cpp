@@ -104,7 +104,8 @@ void SaveMenu::Update(float dt) {
 
   // Pointer: hover selects, a click on a slot confirms, wheel turns pages.
   const int hovered = SlotOnPage(Input::CurMousePos);
-  if (hovered >= 0 && Input::PrevMousePos != Input::CurMousePos)
+  if (hovered >= 0 && (Input::PrevMousePos != Input::CurMousePos ||
+                       (PADinputMouseWentDown & PAD1A)))
     Cursor = hovered;
   if (Input::MouseWheelDeltaY > 0) ActivePage = (ActivePage + Pages - 1) % Pages;
   if (Input::MouseWheelDeltaY < 0) ActivePage = (ActivePage + 1) % Pages;

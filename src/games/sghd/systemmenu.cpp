@@ -39,7 +39,8 @@ void SystemMenu::Update(float dt) {
   for (int i = 0; i < count; i++) {
     if (ItemRect(i).ContainsPoint(Input::CurMousePos)) hovered = i;
   }
-  if (hovered >= 0 && Input::PrevMousePos != Input::CurMousePos)
+  if (hovered >= 0 && (Input::PrevMousePos != Input::CurMousePos ||
+                       (PADinputMouseWentDown & PAD1A)))
     Cursor = hovered;
   ScrWork[SW_SYSMENUCNO] = Cursor;
 

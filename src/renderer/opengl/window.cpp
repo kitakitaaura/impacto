@@ -91,9 +91,11 @@ void GLWindow::TryCreateGL(GraphicsApi api) {
       ImpLog(LogLevel::Info, LogChannel::General,
              "Trying to create native GLES context\n");
 
-#ifndef EMSCRIPTEN
-      // Emscripten's EGL implementation fails when you ask it for GLES 3.2,
-      // though that is what it gives you when building for WebGL 2...
+#ifdef __EMSCRIPTEN__
+      // GLES 3.0 maps to WebGL 2; without a version SDL creates WebGL 1.
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
       SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
       SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
       SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");

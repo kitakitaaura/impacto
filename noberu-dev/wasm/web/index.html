@@ -8,7 +8,10 @@
   :root { color-scheme: dark; }
   body { margin: 0; background: #000; color: #ddd; font: 14px system-ui, sans-serif; }
   #picker { padding: 16px; }
-  #canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+  /* The element itself is 16:9 so SDL's mouse mapping matches the picture */
+  #canvas { display: block; position: fixed; inset: 0; margin: auto;
+            width: min(100vw, calc(100vh * 16 / 9));
+            height: min(100vh, calc(100vw * 9 / 16)); outline: none; }
   #status { position: fixed; left: 8px; bottom: 8px; opacity: .7; }
 </style>
 </head>

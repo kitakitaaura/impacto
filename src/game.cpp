@@ -176,11 +176,6 @@ void InitGameProfile() {
     Profile::SelectionMenu::Configure();
 
     SaveSystem::Init();
-    // STEINS;GATE Steam's executable loads the save file at startup; its
-    // scripts never ask for it.
-    if (Profile::SaveSystem::Type == SaveSystem::SaveDataType::SGHD) {
-      SaveSystem::MountSaveFile();
-    }
     AchievementSystem::Init();
     TipsSystem::Init();
     SaveIconDisplay::Init();
@@ -205,6 +200,12 @@ void InitGameProfile() {
     Vm::Interface::UpdatePADcustomType(0);
 
     SaveSystem::InitializeSystemData();
+    // STEINS;GATE Steam's executable loads the save file at startup; its
+    // scripts never ask for it. Mount after the defaults above, which reset
+    // every slot (without threads the mount finishes immediately).
+    if (Profile::SaveSystem::Type == SaveSystem::SaveDataType::SGHD) {
+      SaveSystem::MountSaveFile();
+    }
 
     Effects::Mosaic.Init();
   }

@@ -203,7 +203,8 @@ bool HandleEvent(SDL_Event const* ev) {
       }
       CurMousePos = SDLMouseCoordsToDesign((int)evt->x, (int)evt->y);
       CurrentInputDevice = Device::Mouse;
-      MouseButtonWentDown[evt->button] =
+      // A release in the same frame must not cancel the press
+      MouseButtonWentDown[evt->button] |=
           (evt->down && !MouseButtonIsDown[evt->button]);
       MouseButtonIsDown[evt->button] = evt->down;
       return true;
@@ -220,7 +221,8 @@ bool HandleEvent(SDL_Event const* ev) {
     case SDL_EVENT_KEY_UP: {
       SDL_KeyboardEvent const* evt = &ev->key;
       CurrentInputDevice = Device::Keyboard;
-      KeyboardButtonWentDown[evt->scancode] =
+      // A release in the same frame must not cancel the press
+      KeyboardButtonWentDown[evt->scancode] |=
           (evt->down && !KeyboardButtonIsDown[evt->scancode]);
       KeyboardButtonIsDown[evt->scancode] = evt->down;
       return true;
@@ -232,7 +234,8 @@ bool HandleEvent(SDL_Event const* ev) {
       SDL_GamepadButton button = NormalizeFaceButton(
           evt->which, static_cast<SDL_GamepadButton>(evt->button));
 
-      ControllerButtonWentDown[button] =
+      // A release in the same frame must not cancel the press
+      ControllerButtonWentDown[button] |=
           (evt->down && !ControllerButtonIsDown[button]);
       ControllerButtonIsDown[button] = evt->down;
       return true;

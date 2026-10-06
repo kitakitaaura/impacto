@@ -8,6 +8,8 @@
 #include "../../renderer/renderer.h"
 #include "../../util.h"
 #include "../../ui/widgets/chlcc/systemmessagebutton.h"
+#include "../../profile/vm.h"
+#include "../../vm/interface/input.h"
 
 namespace Impacto {
 namespace UI {
@@ -142,6 +144,17 @@ void SysMesBox::Update(float dt) {
       MessageItems->UpdateInput(dt);
       ChoiceItems->Update(dt);
       ChoiceItems->UpdateInput(dt);
+
+      // STEINS;GATE Steam: cancel (Escape, right click, pad B) picks the last
+      // choice, which is always the "No"/"Cancel" one.
+      if (Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD &&
+          State == Shown && ChoiceCount > 1 && !ChoiceMade &&
+          ((Vm::Interface::PADinputButtonWentDown |
+            Vm::Interface::PADinputMouseWentDown) &
+           Vm::Interface::PAD1B)) {
+        ScrWork[SW_SYSSEL] = ChoiceCount - 1;
+        ChoiceMade = true;
+      }
     }
 
     if (GetFlag(SF_SAVEICON)) {

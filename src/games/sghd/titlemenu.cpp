@@ -104,7 +104,11 @@ void TitleMenu::ScriptTick(int mode) {
       bool overItem = false;
       for (int i = 0; i < mainCount; i++) {
         if (MainItemRect(i).ContainsPoint(Input::CurMousePos)) {
-          if (Input::PrevMousePos != Input::CurMousePos) MainCursor = i;
+          // A click picks the item under the pointer even if no move came
+          // first (touch taps, or a press and release within one frame).
+          if (Input::PrevMousePos != Input::CurMousePos ||
+              (PADinputMouseWentDown & PAD1A))
+            MainCursor = i;
           overItem = i == MainCursor;
         }
       }
@@ -135,7 +139,11 @@ void TitleMenu::ScriptTick(int mode) {
       bool overItem = false;
       for (int j = 0; j < subCount; j++) {
         if (SubItemRect(j).ContainsPoint(Input::CurMousePos)) {
-          if (Input::PrevMousePos != Input::CurMousePos) SubCursor = j;
+          // A click picks the item under the pointer even if no move came
+          // first (touch taps, or a press and release within one frame).
+          if (Input::PrevMousePos != Input::CurMousePos ||
+              (PADinputMouseWentDown & PAD1A))
+            SubCursor = j;
           overItem = j == SubCursor;
         }
       }
