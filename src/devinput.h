@@ -11,6 +11,7 @@ namespace DevInput {
 //   rclick X Y    (right click at X Y)
 //   hold NAME / release NAME   (keep a pad button down across frames)
 //   sw FROM TO / flag FROM TO   (log ScrWork / flag values)
+//   setsw IDX V / setflag IDX V (write a ScrWork / flag value)
 //   phonemail SLOT MAIL         (STEINS;GATE: deliver a phone mail)
 void Apply();
 

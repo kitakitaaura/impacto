@@ -81,6 +81,13 @@ void Apply() {
       for (int i = from; i <= to; i++)
         out += fmt::format(" {}={}", i, cmd == "sw" ? ScrWork[i] : (int)GetFlag(i));
       ImpLog(LogLevel::Info, LogChannel::General, "DevInput {}:{}\n", cmd, out);
+    } else if (cmd == "setsw" || cmd == "setflag") {
+      int idx = 0, value = 0;
+      in >> idx >> value;
+      if (cmd == "setsw")
+        ScrWork[idx] = value;
+      else
+        SetFlag(idx, value);
     } else if (cmd == "phonemail") {
       int slot = 0, mail = 0;
       in >> slot >> mail;

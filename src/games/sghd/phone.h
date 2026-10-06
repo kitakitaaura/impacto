@@ -34,6 +34,9 @@ void Tick();
 
 void RenderLayer(uint32_t layer);
 
+// 10:38: document table for attachments, mouse scrolling helpers.
+void ScrollInstruction(Vm::Sc3VmThread* thread);
+
 // Dev/test: deliver a mail as 10:37:12 would (DevInput "phonemail").
 void DevReceiveMail(int slot, int mail);
 

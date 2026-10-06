@@ -188,6 +188,17 @@ struct WallpaperRecord {
 };
 std::vector<WallpaperRecord> Wallpapers;
 // Unlocked entries, rebuilt with the other lists (0x45a2b0)
+// Mail attachments (0x190ba80, label 3), indexed by a mail's F0C:
+// 0/4 picture/movie (Value = movie), 1 picture slideshow, 2 ringtones,
+// 3 documents, 5 wallpaper. Data comes from the label numbered Value.
+struct AttachmentRecord {
+  uint32_t Type, Value;
+  std::array<uint32_t, 15> Data;  // up to 5 document triples
+};
+std::vector<AttachmentRecord> Attachments;
+// Documents (10:38:00 from _ATCH.SCX): a u16 label per document, each label
+// a 0xFFFF-terminated list of line strings.
+static uint32_t DocBuffer = 0, DocTable = 0;  // [0x18ffba8], [0x18ffbac]
 std::vector<uint32_t> SoundList;      // 0x190b568
 std::vector<uint32_t> WallpaperList;  // 0x190b8b8
 
@@ -225,6 +236,36 @@ static void RegisterTables(uint32_t buffer, const std::array<uint32_t, 6>& label
     p += 2;
   }
 
+  // Attachments (0x45c210): u16 type (0xFF ends), u16 value, then data read
+  // from the label numbered value.
+  Attachments.clear();
+  p = base + labels[3];
+  for (uint16_t type = ReadU16(p); type != 0xFF; type = ReadU16(p)) {
+    AttachmentRecord r{};
+    r.Type = type;
+    r.Value = ReadU16(p + 2);
+    p += 4;
+    r.Data.fill(0xFF);
+    if (type == 1 || type == 2 || type == 3 || type == 5) {
+      const uint8_t* d = base + ScriptGetLabelAddress(buffer, r.Value);
+      if (type == 3) {
+        for (int i = 0; i < 5; i++, d += 6) {  // (document, lines, flag)
+          r.Data[3 * i] = ReadU16(d);
+          if (r.Data[3 * i] == 0xFF) break;
+          r.Data[3 * i + 1] = ReadU16(d + 2);
+          r.Data[3 * i + 2] = ReadU16(d + 4);
+        }
+      } else {
+        const int max = type == 2 ? 5 : 10;
+        for (int i = 0; i < max; i++, d += 2) {
+          r.Data[i] = ReadU16(d);
+          if (r.Data[i] == 0xFF) break;
+        }
+      }
+    }
+    Attachments.push_back(r);
+  }
+
   // Sound and wallpaper tables: u16 fields, 0xFFFF ends.
   Sounds.clear();
   for (p = base + labels[4]; ReadU16(p) != 0xFFFF; p += 8)
@@ -234,9 +275,10 @@ static void RegisterTables(uint32_t buffer, const std::array<uint32_t, 6>& label
     Wallpapers.push_back({ReadU16(p), ReadU16(p + 2), ReadU16(p + 4)});
 
   ImpLog(LogLevel::Info, LogChannel::VM,
-         "Phone: {} mails, {} sounds, {} wallpapers, UI strings at {}, "
-         "contacts at {}\n",
-         Mails.size(), Sounds.size(), Wallpapers.size(), UiStrBase,
+         "Phone: {} mails, {} attachments, {} sounds, {} wallpapers, UI "
+         "strings at {}, contacts at {}\n",
+         Mails.size(), Attachments.size(), Sounds.size(), Wallpapers.size(),
+         UiStrBase,
          ContactStrBase);
 }
 
@@ -353,6 +395,7 @@ static void SetCallTargets(bool incoming, int a, int b, int c, int d) {
 
 static void Update();
 static void UpdateKeypad();
+static void OpenAttachment(int mail, bool fromLink);
 static void ReceiveMail(int slot, int mail);
 void DevReceiveMail(int slot, int mail) { ReceiveMail(slot, mail); }
 static int LineCount(uint32_t strNum, float width, float size);
@@ -962,8 +1005,9 @@ static void UpdateMailOptions() {
         SetFlag(2611, 1);
       }
       SetReplyDraft(Mails[mail].Reply);
+    } else {
+      OpenAttachment(mail, false);
     }
-    // Attachments (0x190ba80 table) are not ported yet.
     return;
   }
   if (Repeated(0) || Repeated(1)) {
@@ -1046,6 +1090,8 @@ static void UpdateLinkMailOptions() {
       ScrWork[6860] = mail;
       ScrWork[6861] = reply;
       SetReplyDraft(reply);
+    } else {
+      OpenAttachment(mail, true);
     }
     return;
   }
@@ -1427,6 +1473,267 @@ static void UpdateWallpaperPreview() {
   }
 }
 
+// --- Attachments (modes 200-209) --------------------------------------------
+// The handset fades out (SW 6851 / 6852 / 6834 count to 0x100) and the
+// attachment is drawn full screen; flags 2502 and 2616 are held off meanwhile.
+enum {
+  SW_AttachFade = 6851,   // picture / movie
+  SW_SlideFade = 6852,    // slideshow, wallpaper
+  SW_SlideA = 6853,       // PACG picture shown while flag 1607 is clear
+  SW_SlideB = 6855,       // ... while it is set
+  SW_DocFade = 6834,
+  SW_DocLayer = 6835,
+  SW_Doc = 6836,
+  SW_DocScroll = 6837,
+  SW_DocMaxScroll = 6839,
+  SW_AttachMovie = 6850,
+  SW_ZoomTimer = 3004,
+};
+static int AttachIdx = 0;         // 0x190ba7c
+static int AttachPos = 0;         // 0x190c210
+static bool SlideOther = false;   // 0x190c20c
+static bool SavedFlag2502 = false, SavedFlag2616 = false;  // 0x190c204/208
+static int DocHover = 0;          // 0x190c224
+
+static const AttachmentRecord* CurrentAttachment() {
+  return AttachIdx >= 0 && AttachIdx < (int)Attachments.size()
+             ? &Attachments[AttachIdx]
+             : nullptr;
+}
+static uint32_t AttachData(int i) {
+  const AttachmentRecord* a = CurrentAttachment();
+  return a && i >= 0 && i < (int)a->Data.size() ? a->Data[i] : 0xFF;
+}
+static void HoldAttachFlags() {
+  SavedFlag2502 = GetFlag(2502);
+  SavedFlag2616 = GetFlag(2616);
+  SetFlag(2616, 0);
+  SetFlag(2502, 0);
+}
+static void RestoreAttachFlags() {
+  SetFlag(2616, SavedFlag2616);
+  SetFlag(2502, SavedFlag2502);
+}
+static void UnlockWallpaper(uint32_t wp) {
+  if (wp != (uint32_t)None && wp < Wallpapers.size() && Wallpapers[wp].Flag)
+    SetFlag(Wallpapers[wp].Flag, 1);
+}
+static void StartAttachTone(uint32_t sound) {
+  if (sound >= Sounds.size()) return;
+  PlayTone((int)Sounds[sound].Track);
+  if (Sounds[sound].Flag) SetFlag(Sounds[sound].Flag, 1);
+  PreviewStart = SDL_GetTicks();
+  PreviewSound = (int)sound;
+  MarqueeOffset = 0;
+  MarqueeTimer = 0x78;
+}
+static void SetDocPage(int page) {
+  ScrWork[SW_Doc] = (int)AttachData(3 * page);
+  const int lines = (int)AttachData(3 * page + 1);
+  ScrWork[SW_DocMaxScroll] = lines > 0x20 ? lines - 0x20 : 0;
+  if (const uint32_t flag = AttachData(3 * page + 2)) SetFlag(flag, 1);
+  ScrWork[SW_DocScroll] = 0;
+}
+
+// 0x455a02 / 0x457900: "Attachment" chosen from a mail's options popup
+static void OpenAttachment(int mail, bool fromLink) {
+  AttachIdx = (int)Mails[mail].F0C;
+  const AttachmentRecord* a = CurrentAttachment();
+  if (!a) return;
+  ReturnMode = fromLink ? 27 : 5;
+  switch (a->Type) {
+    case 0:
+    case 4:  // movie in the big frame (Bink, played by _SYSTEM)
+      SetFlag(2618, a->Type == 4);
+      ScrWork[SW_PhoneMode] = 200;
+      ScrWork[6330] = ScrWork[SW_PhonePri];
+      HoldAttachFlags();
+      break;
+    case 2:  // ringtones in the music player
+      ScrWork[SW_PhoneMode] = 206;
+      AttachPos = 1;
+      StartAttachTone(AttachData(0));
+      PlaySE(3);
+      break;
+    case 3:  // documents
+      ScrWork[SW_PhoneMode] = 204;
+      HoldAttachFlags();
+      SetFlag(1605, 1);
+      ScrWork[SW_DocLayer] = ScrWork[SW_PhonePri];
+      AttachPos = 0;
+      SetDocPage(AttachPos++);
+      PlaySE(3);
+      break;
+    case 1:
+    case 5:  // pictures (5: one wallpaper with a zoom effect)
+      if (a->Type == 5) {
+        ScrWork[SW_PhoneMode] = 207;
+        ScrWork[SW_ZoomTimer] = 0;
+      } else {
+        ScrWork[SW_PhoneMode] = 202;
+      }
+      if (!fromLink) ReturnMode = ScrWork[SW_MailFolder] ? 4 : 5;
+      HoldAttachFlags();
+      SetFlag(1605, 1);
+      ScrWork[SW_SlideA] = (int)AttachData(0);
+      UnlockWallpaper(AttachData(1));
+      AttachPos = 2;  // next (picture, wallpaper) pair
+      SlideOther = false;
+      SetFlag(1607, 0);
+      PlaySE(3);
+      break;
+    default:
+      break;
+  }
+}
+
+static bool FadeIn(int sw) {
+  if (ScrWork[sw] >= 0x100) return false;
+  ScrWork[sw] = std::min(ScrWork[sw] + 0x10, 0x100);
+  return true;
+}
+static bool FadeOut(int sw) {
+  if (ScrWork[sw] <= 0) return false;
+  ScrWork[sw] = std::max(ScrWork[sw] - 0x10, 0);
+  return true;
+}
+
+// 0x455f90 / 0x456050: movie attachment
+static void UpdateAttachMovie() {
+  if (ScrWork[SW_AttachFade] < 0x100) {
+    FadeIn(SW_AttachFade);
+    if (ScrWork[SW_AttachFade] == 0x100) {
+      SetFlag(1602, 1);
+      if (const AttachmentRecord* a = CurrentAttachment())
+        ScrWork[SW_AttachMovie] = (int)a->Value;
+    }
+    return;
+  }
+  PointerAnywhere();
+  if ((Pressed(6) || Pressed(5)) && !GetFlag(1612)) ScrWork[SW_PhoneMode] = 201;
+}
+static void UpdateAttachClose(int fadeSw) {
+  RestoreAttachFlags();
+  if (!FadeOut(fadeSw)) ScrWork[SW_PhoneMode] = ReturnMode;
+}
+
+// 0x4560a0: picture slideshow, confirm shows the next picture
+static void UpdateSlides() {
+  if (SlideOther) {
+    SetFlag(1607, 1);
+  } else {
+    SetFlag(1607, 0);
+    if (FadeIn(SW_SlideFade)) return;
+  }
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 203;
+    return;
+  }
+  PointerAnywhere();
+  if (!Pressed(5)) return;
+  const uint32_t pic = AttachData(AttachPos++);
+  if (pic == 0xFF) {
+    ScrWork[SW_PhoneMode] = 203;
+    return;
+  }
+  UnlockWallpaper(AttachData(AttachPos++));
+  PlaySE(3);
+  SlideOther = !SlideOther;
+  if (SlideOther) {
+    SetFlag(1606, 1);
+    ScrWork[SW_SlideB] = (int)pic;
+  } else {
+    SetFlag(1605, 1);
+    ScrWork[SW_SlideA] = (int)pic;
+  }
+}
+
+// 0x456250: document pages with scrolling
+static void UpdateDocument() {
+  int& scroll = ScrWork[SW_DocScroll];
+  const int maxScroll = ScrWork[SW_DocMaxScroll];
+  if (FadeIn(SW_DocFade)) return;
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 205;
+    return;
+  }
+  DocHover = 0;
+  if (PointerMode()) {
+    const RectF up(546 / 1.5f, 66 / 1.5f, 828 / 1.5f, 32 / 1.5f);
+    const RectF down(546 / 1.5f, 986 / 1.5f, 828 / 1.5f, 32 / 1.5f);
+    if (Input::MouseWheelDeltaY > 0 && scroll > 0) scroll--;
+    if (Input::MouseWheelDeltaY < 0 && scroll < maxScroll) scroll++;
+    if (Over(up)) DocHover = 1;
+    if (Over(down)) DocHover = 2;
+    if (Clicked(up)) {
+      if (scroll > 0) scroll--;
+    } else if (Clicked(down)) {
+      if (scroll < maxScroll) scroll++;
+    } else {
+      PointerAnywhere();
+    }
+  }
+  if (Pressed(5)) {
+    if (AttachData(3 * AttachPos) == 0xFF) {
+      ScrWork[SW_PhoneMode] = 205;
+      return;
+    }
+    SetDocPage(AttachPos++);
+    PlaySE(3);
+    return;
+  }
+  if (Repeated(0) && scroll > 0) scroll--;
+  if (Repeated(1) && scroll < maxScroll) scroll++;
+}
+
+// 0x456530: ringtone attachment in the music player; confirm plays the next
+static void UpdateAttachTones() {
+  PointerAnywhere();
+  const bool back = Pressed(6);
+  if (Pressed(5)) {
+    const uint32_t next = AttachData(AttachPos++);
+    if (next != 0xFF) {
+      StartAttachTone(next);
+      PlaySE(3);
+      return;
+    }
+  } else if (!back) {
+    return;
+  }
+  ScrWork[SW_PhoneMode] = ReturnMode;
+  const int bgm = ScrWork[Profile::ScriptVars::SW_BGMREQNO];
+  if (bgm != 0xFFFF)
+    Audio::Channels[Audio::AC_BGM0]->Play("bgm", bgm, GetFlag(2484), 0.0f);
+  else
+    Audio::Channels[Audio::AC_BGM0]->Stop(0.0f);
+}
+
+// 0x4566e0 / 0x456760 / 0x4567f0: wallpaper attachment. The executable
+// zooms the picture with a particle effect (0x45b620) while SW 3004 runs;
+// only the timing is kept here.
+static void UpdateWallpaperAttach() {
+  if (FadeIn(SW_SlideFade)) return;
+  PointerAnywhere();
+  if (Pressed(6) || Pressed(5)) ScrWork[SW_PhoneMode] = 208;
+}
+static void UpdateWallpaperZoom() {
+  int& t = ScrWork[SW_ZoomTimer];
+  if (t < 0x3d) {
+    if (++t == 0x3d) SetFlag(3876, 1);
+    return;
+  }
+  PointerAnywhere();
+  if (Pressed(6) || Pressed(5)) ScrWork[SW_PhoneMode] = 209;
+}
+static void UpdateWallpaperAttachClose() {
+  int& t = ScrWork[SW_ZoomTimer];
+  if (t > 0) {
+    t--;
+    return;
+  }
+  UpdateAttachClose(SW_SlideFade);
+}
+
 static void Update() {
   ClickConfirm = false;
   switch (ScrWork[SW_PhoneMode]) {
@@ -1505,6 +1812,36 @@ static void Update() {
       break;
     case 37:
       UpdateWallpaperPreview();
+      break;
+    case 200:
+      UpdateAttachMovie();
+      break;
+    case 201:
+      UpdateAttachClose(SW_AttachFade);
+      break;
+    case 202:
+      UpdateSlides();
+      break;
+    case 203:
+      UpdateAttachClose(SW_SlideFade);
+      break;
+    case 204:
+      UpdateDocument();
+      break;
+    case 205:
+      UpdateAttachClose(SW_DocFade);
+      break;
+    case 206:
+      UpdateAttachTones();
+      break;
+    case 207:
+      UpdateWallpaperAttach();
+      break;
+    case 208:
+      UpdateWallpaperZoom();
+      break;
+    case 209:
+      UpdateWallpaperAttachClose();
       break;
     default:
       break;  // script-driven screens, or not ported yet
@@ -2280,6 +2617,16 @@ static void DrawScreen(int mode, float x, float y) {
     case 37:  // 0x45c4a0
       DrawWallpaper(x, y);
       break;
+    case 206:
+      DrawTonePreview(x, y);
+      break;
+    case 200: case 201: case 202: case 203: case 204: case 205:
+    case 207: case 208: case 209:  // 0x44fe70: the mail behind
+      if (ReturnMode == 5)
+        DrawMailView(x, y, true);
+      else if (ReturnMode == 27)
+        DrawLinkMail(x, y);
+      break;
     case 22:
       DrawReplyPreview(x, y);
       break;
@@ -2330,6 +2677,89 @@ static void DrawKeypad() {
       (float)(col * 77 + 0x20d), (float)(row * 47 + 0x114), alpha);
 }
 
+// --- Attachment overlays (layer SW 6842 / 6835, 0x428790) -------------------
+// PHONE2.DDS holds the full-screen phone frame and its status bar; PACG.DDS
+// the attachment pictures (6 per row, 681x770).
+static bool AnyUnreadMail() {  // 0x44db60
+  for (uint32_t i = 0; i < Mails.size(); i++)
+    if (!(Mails[i].Flags & 1) && GetMailStatus(i, 0) && !GetMailStatus(i, 1))
+      return true;
+  return false;
+}
+static void DrawBigFrame(float alpha) {
+  const float saved = Alpha;
+  Alpha = alpha;
+  SprSheet("PhoneFrame", 0, 0, 1920, 1080, 0, 0);
+  SprSheet("PhoneFrame", 1.5f, GetFlag(SF_HasSignal) ? 1081.5f : 1155.0f, 828,
+           70.5f, 546 / 1.5f, 0);
+  if (AnyUnreadMail())
+    SprSheet("PhoneFrame", 832.5f, 1081.5f, 84, 48, 1134 / 1.5f, 0);
+  Alpha = saved;
+}
+static void DrawSlide(float alpha) {  // 0x44fc90
+  DrawBigFrame(alpha);
+  const int id = GetFlag(1607) ? ScrWork[SW_SlideB] : ScrWork[SW_SlideA];
+  if (id < 0 || id >= 36) return;
+  const auto it = Profile::SpriteSheets.find("PhoneAttach");
+  if (it == Profile::SpriteSheets.end()) return;
+  Sprite spr(it->second, (id % 6) * 681 / 1.5f, (id / 6) * 770 / 1.5f,
+             680 / 1.5f, 768 / 1.5f);
+  Renderer->DrawSprite(spr, RectF(546 / 1.5f, 70.5f / 1.5f, 828 / 1.5f, 936 / 1.5f),
+                       glm::vec4(1.0f, 1.0f, 1.0f, alpha));
+}
+// 0x44d430: document text, 31 lines (25 for full-screen documents >= 1000)
+static void DrawDocument() {
+  const int fade = ScrWork[SW_DocFade];
+  if (fade <= 0 || !DocBuffer) return;
+  const float alpha = std::min(fade, 256) / 256.0f;
+  const int doc = ScrWork[SW_Doc] % 1000;
+  const bool framed = ScrWork[SW_Doc] < 1000;
+  float x = 0xe8, y = 0x9e, width = 0x320;
+  int maxLines = 0x19;
+  if (framed) {
+    DrawBigFrame(alpha);
+    Renderer->DrawQuad(RectF(546 / 1.5f, 70.5f / 1.5f, 828 / 1.5f, 936 / 1.5f),
+                       glm::vec4(1.0f, 1.0f, 1.0f, alpha));
+    x = 0x16d, y = 0x30, width = 0x228, maxLines = 0x1f;
+  }
+  const auto& buf = ScriptBuffers[DocBuffer];
+  const uint32_t label = ReadU16(buf.data() + DocTable + doc * 2);
+  const uint8_t* p = buf.data() + ScriptGetLabelAddress(DocBuffer, label);
+  int skip = ScrWork[SW_DocScroll], drawn = 0;
+  const float saved = Alpha;
+  Alpha = alpha;
+  for (uint16_t str = ReadU16(p); str != 0xFFFF && drawn < maxLines;
+       p += 2, str = ReadU16(p)) {
+    if (skip > 0) {
+      skip--;
+      continue;
+    }
+    Sc3VmThread dummy;
+    dummy.ScriptBufferId = DocBuffer;
+    dummy.IpOffset = ScriptGetStrAddress(DocBuffer, str);
+    std::vector<ProcessedTextGlyph> glyphs = TextLayoutPlainLine(
+        &dummy, 255, *Profile::Dialogue::DialogueFont, 20,
+        DialogueColorPair{framed ? 0u : 0xFFFFFFu, 0}, 1.0f,
+        glm::vec2(x, y + 20.0f * drawn), TextAlignment::Left);
+    (void)width;
+    Profile::Dialogue::DialogueFont->DrawProcessedText(glyphs, Alpha);
+    drawn++;
+  }
+  if (framed) {
+    const auto arrow = [&](float sy, float dy, bool hot) {
+      const auto it = Profile::SpriteSheets.find("PhoneFrame");
+      if (it == Profile::SpriteSheets.end()) return;
+      Sprite spr(it->second, 2 / 1.5f, sy / 1.5f, 828 / 1.5f, 24 / 1.5f);
+      Renderer->DrawSprite(spr, RectF(546 / 1.5f, dy / 1.5f, 828 / 1.5f, 24 / 1.5f),
+                           Rgb(hot ? 0xFFEE88 : 0xFFFFFF, alpha));
+    };
+    if (ScrWork[SW_DocScroll] > 0) arrow(1228, 69.5f, DocHover == 1);
+    if (ScrWork[SW_DocMaxScroll] > ScrWork[SW_DocScroll])
+      arrow(1254, 982.5f, DocHover == 2);
+  }
+  Alpha = saved;
+}
+
 // 0x453b10
 static void Render() {
   const int ct = ScrWork[SW_PhoneCt];
@@ -2350,9 +2780,65 @@ static void Render() {
 }
 
 void RenderLayer(uint32_t layer) {
-  if ((int)layer != ScrWork[SW_PhonePri]) return;
-  if (ScrWork[SW_PhoneHide1] >= 0xFF || ScrWork[SW_PhoneHide2] >= 0xFF) return;
-  Render();
+  if ((int)layer == ScrWork[SW_PhonePri]) {
+    if (ScrWork[SW_PhoneHide1] < 0xFF && ScrWork[SW_PhoneHide2] < 0xFF) Render();
+    // Movie attachments only show the frame: Bink playback isn't supported.
+    if (ScrWork[SW_AttachFade] > 0)
+      DrawBigFrame(std::min(ScrWork[SW_AttachFade], 256) / 256.0f);
+    if (ScrWork[SW_SlideFade] > 0)
+      DrawSlide(std::min(ScrWork[SW_SlideFade], 256) / 256.0f);
+  }
+  if ((int)layer == ScrWork[SW_DocLayer]) DrawDocument();
+}
+
+// 10:38 (0x468710): sub-op 0 registers the document table from _ATCH.SCX;
+// 1-6 add mouse wheel / arrow scrolling to a script-driven text screen
+// (flags 1620/1621 or 1622/1623).
+void ScrollInstruction(Sc3VmThread* thread) {
+  StartInstruction;
+  PopUint8(type);
+  switch (type) {
+    case 0: {
+      PopUint16(label);
+      DocBuffer = thread->ScriptBufferId;
+      DocTable = ScriptGetLabelAddress(thread->ScriptBufferId, label);
+    } break;
+    case 1:
+    case 4:
+      SetFlag(type == 1 ? 1620 : 1622, 0);
+      SetFlag(type == 1 ? 1621 : 1623, 0);
+      SetFlag(3002, 1);
+      break;
+    case 2:
+    case 5: {
+      const int upFlag = type == 2 ? 1620 : 1622;
+      SetFlag(upFlag, 0);
+      SetFlag(upFlag + 1, 0);
+      DocHover = 0;
+      if (!PointerMode()) break;
+      const RectF up(546 / 1.5f, 66 / 1.5f, 828 / 1.5f, 32 / 1.5f);
+      const RectF down(546 / 1.5f, 986 / 1.5f, 828 / 1.5f, 32 / 1.5f);
+      if (Input::MouseWheelDeltaY > 0) SetFlag(upFlag, 1);
+      if (Input::MouseWheelDeltaY < 0) SetFlag(upFlag + 1, 1);
+      if (Over(up)) DocHover = 1;
+      if (Over(down)) DocHover = 2;
+      if (Clicked(up)) {
+        SetFlag(upFlag, 1);
+      } else if (Clicked(down)) {
+        SetFlag(upFlag + 1, 1);
+      } else if (PADinputMouseWentDown & PAD1A) {
+        PADinputButtonWentDown |= PADcustom[5];
+      }
+    } break;
+    case 3:
+    case 6:
+      SetFlag(type == 3 ? 1620 : 1622, 0);
+      SetFlag(type == 3 ? 1621 : 1623, 0);
+      SetFlag(3002, 0);
+      break;
+    default:
+      break;
+  }
 }
 
 }  // namespace Phone

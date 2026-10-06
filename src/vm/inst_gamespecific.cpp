@@ -689,6 +689,9 @@ VmInstruction(InstMapSystem) {
 }
 // STEINS;GATE Steam phone: operands and behaviour live with the phone port.
 VmInstruction(InstPhoneSGHD) { UI::SGHD::Phone::Instruction(thread); }
+VmInstruction(InstScroll1038SGHD) {
+  UI::SGHD::Phone::ScrollInstruction(thread);
+}
 
 VmInstruction(InstPhoneSG) {
   StartInstruction;

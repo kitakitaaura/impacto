@@ -73,6 +73,9 @@ VmInstruction(InstLoadPic) {
       surfaceId, archiveId, fileId);
   switch (archiveId) {
     case 0: {  // bg archive
+      // STEINS;GATE loads a bg into surface 89 for the phone's wallpaper zoom
+      // effect; only the regular background surfaces exist here.
+      if (!Backgrounds2D.contains(surfaceId)) break;
       if (Backgrounds2D[surfaceId]->Status == LoadStatus::Loading) {
         ResetInstruction;
         BlockThread;

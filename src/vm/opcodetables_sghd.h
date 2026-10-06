@@ -590,7 +590,7 @@ InstructionProc inline constexpr OpcodeTableUser1_SGHD[256] = {
     InstDummy,             // 10 35
     InstByteArgSGHD,       // 10 36  one byte, no effect on Steam
     InstPhoneSGHD,         // 10 37
-    InstUnk1038Darling,    // 10 38
+    InstScroll1038SGHD,    // 10 38  attachment documents, mouse scrolling
     InstTwipo,             // 10 39
     InstUnk103A,           // 10 3A
     InstDummy,             // 10 3B
