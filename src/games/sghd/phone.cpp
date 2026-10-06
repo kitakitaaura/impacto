@@ -305,6 +305,7 @@ static void SetCallTargets(bool incoming, int a, int b, int c, int d) {
 }
 
 static void Update();
+static void UpdateKeypad();
 static void ReceiveMail(int slot, int mail);
 void DevReceiveMail(int slot, int mail) { ReceiveMail(slot, mail); }
 static int LineCount(uint32_t strNum, float width, float size);
@@ -391,8 +392,8 @@ void Instruction(Sc3VmThread* thread) {
       ScrWork[SW_ContactSelected] =
           i >= 0 && i < (int)ContactList.size() ? (int)ContactList[i] : 0xFF;
     } break;
-    case 0x17:  // number dialling keypad (0x45a350), not ported yet
-      SetFlag(SF_PhoneClose, 1);
+    case 0x17:
+      UpdateKeypad();
       break;
     case 0x18:
       break;
@@ -488,6 +489,97 @@ static bool Repeated(int slot) {
 
 static void PlaySE(int id) {
   (void)id;  // TODO: phone sound effects (0x26eee98 request block)
+}
+
+// --- Dial keypad (10:37:17, 0x45a350) --------------------------------------
+// A 3x4 keypad drawn over the middle of the screen while the phone shows mode
+// 23. The script loops 10:37:17 until flag 2609, then branches on SW 6833.
+enum {
+  SW_KeypadCursor = 6831,  // key 0..11 (0xFF: none under the pointer)
+  SW_KeypadCount = 6832,   // digits typed so far
+  SW_KeypadResult = 6833,  // 0: #120, 1: 120#, 2: anything else
+  SW_KeypadAlpha = 6815,   // overlay fade, set by the script
+};
+// Key -> digit (0x531a08); 10 and 11 are the # and * keys.
+constexpr std::array<int, 12> KeypadDigits = {1, 2, 3, 4, 5, 6,
+                                              7, 8, 9, 11, 0, 10};
+static std::array<int, 4> KeypadInput{};  // 0x190ba50
+
+// Hitboxes 34..45: absolute 1080p rectangles.
+static RectF KeypadKeyBox(int key) {
+  static const float xs[] = {775, 900, 1018}, ws[] = {124, 118, 124};
+  static const float ys[] = {414, 484, 555, 625};
+  return RectF(xs[key % 3] / 1.5f, ys[key / 3] / 1.5f, ws[key % 3] / 1.5f,
+               70 / 1.5f);
+}
+
+// Number keys type directly (not in the executable).
+static int KeypadKeyTyped() {
+  using namespace Input;
+  const bool shift = KeyboardButtonIsDown[SDL_SCANCODE_LSHIFT] ||
+                     KeyboardButtonIsDown[SDL_SCANCODE_RSHIFT];
+  if (KeyboardButtonWentDown[SDL_SCANCODE_KP_MULTIPLY] ||
+      (shift && KeyboardButtonWentDown[SDL_SCANCODE_8]))
+    return 9;  // *
+  if (KeyboardButtonWentDown[SDL_SCANCODE_KP_HASH] ||
+      (shift && KeyboardButtonWentDown[SDL_SCANCODE_3]))
+    return 11;  // #
+  if (KeyboardButtonWentDown[SDL_SCANCODE_0] ||
+      KeyboardButtonWentDown[SDL_SCANCODE_KP_0])
+    return 10;
+  for (int d = 1; d <= 9; d++) {
+    if ((!shift && KeyboardButtonWentDown[SDL_SCANCODE_1 + d - 1]) ||
+        KeyboardButtonWentDown[SDL_SCANCODE_KP_1 + d - 1])
+      return d - 1;
+  }
+  return -1;
+}
+
+static void UpdateKeypad() {
+  int& cursor = ScrWork[SW_KeypadCursor];
+  int& count = ScrWork[SW_KeypadCount];
+  ClickConfirm = false;
+  if (Pressed(6)) {
+    if (count > 0) count--;
+    return;
+  }
+  if (PointerMode()) {
+    cursor = 0xFF;
+    for (int i = 0; i < 12; i++) {
+      if (KeypadKeyBox(i).ContainsPoint(Input::CurMousePos)) cursor = i;
+      if (Clicked(KeypadKeyBox(i))) ClickConfirm = true;
+    }
+  }
+  const int typed = KeypadKeyTyped();
+  if (typed >= 0) {
+    cursor = typed;
+    ClickConfirm = true;
+  }
+  if (Pressed(5)) {
+    if (cursor == 0xFF || count >= 4) return;
+    PlaySE(0x9c);
+    ScrWork[4313] = 0xFFFF;
+    KeypadInput[count++] = KeypadDigits[cursor];
+    if (count < 4) return;
+    SetFlag(SF_PhoneClose, 1);
+    const auto& d = KeypadInput;
+    if (d[0] == 10 && d[1] == 1 && d[2] == 2 && d[3] == 0)
+      ScrWork[SW_KeypadResult] = 0;
+    else if (d[0] == 1 && d[1] == 2 && d[2] == 0 && d[3] == 10)
+      ScrWork[SW_KeypadResult] = 1;
+    else
+      ScrWork[SW_KeypadResult] = 2;
+    return;
+  }
+  // Arrow keys wrap around the 3x4 grid.
+  auto move = [&](int slot, auto step) {
+    if (!Repeated(slot)) return;
+    cursor = cursor == 0xFF ? 0 : step(cursor);
+  };
+  move(0, [](int c) { return c > 2 ? c - 3 : c + 9; });
+  move(1, [](int c) { return c < 9 ? c + 3 : c - 9; });
+  move(2, [](int c) { return c % 3 == 0 ? c + 2 : c - 1; });
+  move(3, [](int c) { return c % 3 == 2 ? c - 2 : c + 1; });
 }
 
 // --- Per-screen update handlers (0x45a030) ----------------------------------
@@ -1655,6 +1747,16 @@ static void DrawScreen(int mode, float x, float y) {
       Rect(x, y, 414.0f, 468.0f, 0x000000);
       Spr(502.5f, 1293.0f, 276.0f, 54.0f, x + 0x2e, y + 0x88);
       break;
+    case 23: {  // keypad: connected screen + typed digits (0x450620)
+      Rect(x, y, 414.0f, 468.0f, 0x000000);
+      Spr(502.5f, 1293.0f, 276.0f, 54.0f, x + 0x2e, y + 0x88);
+      const int count = std::clamp(ScrWork[SW_KeypadCount], 0, 4);
+      for (int i = 0; i < count; i++) {
+        const float dx = x - 24.0f * count + 0x10e + 24.0f * i;
+        Spr((KeypadInput[i] * 24 + 0x14f) * 1.5f, 1366.5f, 33.0f, 45.0f, dx,
+            y + 0xd4);
+      }
+    } break;
     case 12:  // 0x44e3a0
       Spr(616.5f, 109.5f, 414.0f, 468.0f, x, y);
       break;
@@ -1705,6 +1807,18 @@ static void DrawScreen(int mode, float x, float y) {
   }
 }
 
+// Keypad overlay at a fixed screen position, faded by SW 6815 (0x450620).
+static void DrawKeypad() {
+  const float alpha = std::clamp(ScrWork[SW_KeypadAlpha], 0, 256) / 256.0f;
+  Spr(1033.5f, 367.5f, 502.5f, 369.0f, 708 / 1.5f, 342 / 1.5f, alpha);
+  const int key = ScrWork[SW_KeypadCursor];
+  if (key == 0xFF || key < 0 || key > 11 || ScrWork[SW_KeypadAlpha] < 0xFF)
+    return;
+  const int col = key % 3, row = key / 3;
+  Spr((col * 77 + 0x2e6) * 1.5f, (row * 47 + 0x21c) * 1.5f, 112.5f, 67.5f,
+      (float)(col * 77 + 0x20d), (float)(row * 47 + 0x114), alpha);
+}
+
 // 0x453b10
 static void Render() {
   const int ct = ScrWork[SW_PhoneCt];
@@ -1721,6 +1835,7 @@ static void Render() {
   }
   // Screen glass
   Spr(616.5f, 631.5f, 414.0f, 447.0f, x, 0x73);
+  if (ScrWork[SW_PhoneMode] == 23) DrawKeypad();
 }
 
 void RenderLayer(uint32_t layer) {
