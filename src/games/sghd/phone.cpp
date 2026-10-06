@@ -14,6 +14,7 @@
 #include "../../renderer/renderer.h"
 #include "../../profile/sprites.h"
 #include "../../profile/dialogue.h"
+#include "../../profile/scriptvars.h"
 #include "../../text/text.h"
 #include "../../audio/audiosystem.h"
 #include "../../audio/audiochannel.h"
@@ -58,6 +59,13 @@ enum : int {
   SW_PhoneColor = 6856,     // body texture variant 0..4
   SW_PhonePri = 6842,       // render layer
   SW_Wallpaper = 3003,
+  SW_WallpaperSet = 2010,
+  SW_Ringtone = 2011,
+  SW_MailTone = 2013,
+  SW_SettingsCursor = 6843,  // 0 wallpaper, 1 ringtone, 2 mail tone
+  SW_ToneCursor = 6844,      // row 0 is "none"
+  SW_ToneRows = 6845,
+  SW_SetPopup = 6846,        // 0 preview/play, 1 set
   SW_Clock = 2015,
 };
 enum : int {
@@ -168,6 +176,21 @@ static int GetMailStatus(int mail, int cat) {
 
 static uint16_t ReadU16(const uint8_t* p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
+// Ringtones (0x190b380, label 4): Track is the BGM track and the SW 2011
+// value, MailTone the SW 2013 value, Name a UI string offset, Flag unlocks it.
+struct SoundRecord {
+  uint32_t Track, MailTone, Name, Flag;
+};
+std::vector<SoundRecord> Sounds;
+// Wallpapers (0x190b5e0, label 5): the record index is the wallpaper id.
+struct WallpaperRecord {
+  uint32_t Id, Name, Flag;
+};
+std::vector<WallpaperRecord> Wallpapers;
+// Unlocked entries, rebuilt with the other lists (0x45a2b0)
+std::vector<uint32_t> SoundList;      // 0x190b568
+std::vector<uint32_t> WallpaperList;  // 0x190b8b8
+
 static void RegisterTables(uint32_t buffer, const std::array<uint32_t, 6>& labels) {
   TableBuffer = buffer;
   const uint8_t* base = ScriptBuffers[buffer].data();
@@ -201,9 +224,20 @@ static void RegisterTables(uint32_t buffer, const std::array<uint32_t, 6>& label
     flags = ReadU16(p);
     p += 2;
   }
+
+  // Sound and wallpaper tables: u16 fields, 0xFFFF ends.
+  Sounds.clear();
+  for (p = base + labels[4]; ReadU16(p) != 0xFFFF; p += 8)
+    Sounds.push_back({ReadU16(p), ReadU16(p + 2), ReadU16(p + 4), ReadU16(p + 6)});
+  Wallpapers.clear();
+  for (p = base + labels[5]; ReadU16(p) != 0xFFFF; p += 6)
+    Wallpapers.push_back({ReadU16(p), ReadU16(p + 2), ReadU16(p + 4)});
+
   ImpLog(LogLevel::Info, LogChannel::VM,
-         "Phone: {} mails, UI strings at {}, contacts at {}\n", Mails.size(),
-         UiStrBase, ContactStrBase);
+         "Phone: {} mails, {} sounds, {} wallpapers, UI strings at {}, "
+         "contacts at {}\n",
+         Mails.size(), Sounds.size(), Wallpapers.size(), UiStrBase,
+         ContactStrBase);
 }
 
 static void SortByDate(std::vector<uint32_t>& list) {
@@ -215,9 +249,11 @@ static void SortByDate(std::vector<uint32_t>& list) {
   });
 }
 
+static void BuildUnlockLists();
+
 // 0x4547f0
 static void BuildLists() {
-  ScrWork[SW_Wallpaper] = ScrWork[2010];
+  ScrWork[SW_Wallpaper] = ScrWork[SW_WallpaperSet];
   InboxList.clear();
   SentList.clear();
   bool allRead = true;
@@ -253,6 +289,17 @@ static void BuildLists() {
     if (out < MaxContacts) ContactCaps[out][0] = true;
     if (in < MaxContacts) ContactCaps[in][1] = true;
   }
+  BuildUnlockLists();
+}
+
+// 0x45a2b0: ringtones and wallpapers whose flag is 0 or set
+static void BuildUnlockLists() {
+  SoundList.clear();
+  for (uint32_t i = 0; i < Sounds.size(); i++)
+    if (!Sounds[i].Flag || GetFlag(Sounds[i].Flag)) SoundList.push_back(i);
+  WallpaperList.clear();
+  for (uint32_t i = 0; i < Wallpapers.size(); i++)
+    if (!Wallpapers[i].Flag || GetFlag(Wallpapers[i].Flag)) WallpaperList.push_back(i);
 }
 
 // 0x454730
@@ -649,8 +696,9 @@ static void UpdateMenu() {
         ScrWork[SW_PhoneMode] = 6;
         break;
       case 3:
-        ScrWork[6843] = 0;
+        ScrWork[SW_SettingsCursor] = PointerMode() ? 0xFF : 0;
         ScrWork[SW_PhoneMode] = 13;
+        BuildUnlockLists();
         break;
       default:  // 2: "connect to the network", nothing in the original
         break;
@@ -1100,6 +1148,285 @@ static void UpdateContactPopup() {
   }
 }
 
+// --- Settings: wallpaper, ringtone, mail tone ------------------------------
+static int WallCursor = 0xFF;  // 0x190b9a8: row on the page
+static int WallPage = 0;       // 0x190b9ac
+static int WallPages = 1;      // 0x190b9b0
+static int WallHover = 0;      // 0x190c220: page arrow under the pointer
+static int PreviewReturn = 15;   // 0x190ba60
+static uint64_t PreviewStart = 0; // 0x190ba68 counts 60 Hz frames instead
+static int PreviewSound = 0;     // 0x190ba70
+static int MarqueeOffset = 0;    // 0x190ba74
+static int MarqueeTimer = 0x78;  // 0x190ba78
+
+static bool RingtoneScreen() { return ScrWork[SW_SettingsCursor] == 1; }
+static int ToneListMode() { return RingtoneScreen() ? 15 : 16; }
+static uint32_t ToneValue(uint32_t sound, bool mail) {
+  return mail ? Sounds[sound].MailTone : Sounds[sound].Track;
+}
+
+// Two-option popups (hitboxes 10, 11); the exe resets the cursor each frame.
+static void PointerPopupReset(int& cursor, bool second) {
+  if (!PointerMode()) return;
+  cursor = 0xFF;
+  for (int i = 0; i < (second ? 2 : 1); i++) {
+    const RectF r = Box(30, 179 + 36.0f * i, 353, 36);
+    if (Over(r)) cursor = i;
+    if (Clicked(r)) ClickConfirm = true;
+  }
+}
+// Click anywhere on the screen (hitbox 0) confirms.
+static void PointerAnywhere() {
+  if (PointerMode() && (PADinputMouseWentDown & PAD1A)) ClickConfirm = true;
+}
+
+// 0x454e30: settings menu
+static void UpdateSettings() {
+  int& cursor = ScrWork[SW_SettingsCursor];
+  if (Pressed(6)) {
+    ScrWork[SW_MenuCursor] = 3;
+    ScrWork[SW_PhoneMode] = 20;
+    return;
+  }
+  if (PointerMode()) {
+    cursor = 0xFF;
+    for (int i = 0; i < 3; i++) {
+      if (Over(Box(0, 90 + 36.0f * i, 414, 36))) cursor = i;
+      if (Clicked(Box(0, 90 + 36.0f * i, 414, 36))) ClickConfirm = true;
+    }
+  }
+  if (Pressed(5)) {
+    switch (cursor) {
+      case 0: {
+        const int count = (int)WallpaperList.size();
+        const auto it = std::find(WallpaperList.begin(), WallpaperList.end(),
+                                  (uint32_t)ScrWork[SW_WallpaperSet]);
+        int idx = it != WallpaperList.end() ? (int)(it - WallpaperList.begin())
+                                            : (WallCursor == 0xFF ? 0 : WallCursor);
+        WallPages = std::max((count + 5) / 6, 1);
+        WallPage = idx / 6;
+        WallCursor = PointerMode() ? 0xFF : idx % 6;
+        ScrWork[SW_PhoneMode] = 14;
+      } break;
+      case 1:
+      case 2: {
+        const bool mail = cursor == 2;
+        int& row = ScrWork[SW_ToneCursor];
+        row = 0;
+        const int value = ScrWork[mail ? SW_MailTone : SW_Ringtone];
+        if (value != 0xFFFF) {
+          for (size_t i = 0; i < SoundList.size(); i++)
+            if ((int)ToneValue(SoundList[i], mail) == value) row = (int)i + 1;
+        }
+        ScrWork[SW_ToneRows] = (int)SoundList.size() + 1;
+        if (PointerMode()) row = 0xFF;
+        ScrWork[SW_PhoneMode] = mail ? 16 : 15;
+      } break;
+      default:
+        break;
+    }
+    return;
+  }
+  if (Repeated(0)) cursor = cursor == 0xFF ? 0 : (cursor == 0 ? 2 : cursor - 1);
+  if (Repeated(1)) cursor = cursor == 0xFF || cursor >= 2 ? 0 : cursor + 1;
+}
+
+// 0x4551a0: wallpaper thumbnails, six per page
+static void UpdateWallpaperList() {
+  const int count = (int)WallpaperList.size();
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 13;
+    ScrWork[SW_Wallpaper] = ScrWork[SW_WallpaperSet];
+    if (PointerMode()) ScrWork[SW_SettingsCursor] = 0xFF;
+    return;
+  }
+  const auto prevPage = [&] { WallPage = WallPage ? WallPage - 1 : WallPages - 1; };
+  const auto nextPage = [&] { WallPage = WallPage < WallPages - 1 ? WallPage + 1 : 0; };
+  if (PointerMode()) {
+    WallCursor = 0xFF;
+    WallHover = 0;
+    if (Input::MouseWheelDeltaY > 0) prevPage();
+    if (Input::MouseWheelDeltaY < 0) nextPage();
+    if (Over(Box(0, 0, 207, 43))) WallHover = 1;
+    if (Over(Box(207, 0, 207, 43))) WallHover = 2;
+    if (Clicked(Box(0, 0, 207, 43))) prevPage();
+    if (Clicked(Box(207, 0, 207, 43))) nextPage();
+    for (int i = 0; i < 6; i++) {
+      if (WallPage * 6 + i >= count) break;
+      const RectF r = Box(0, 43 + 72.0f * i, 414, 72);
+      if (Over(r)) WallCursor = i;
+      if (Clicked(r)) ClickConfirm = true;
+    }
+  }
+  if (Pressed(5) && WallCursor != 0xFF) {
+    ScrWork[SW_SetPopup] = PointerMode() ? 0xFF : 0;
+    ScrWork[SW_PhoneMode] = 35;
+  }
+  if (count == 0) return;
+  if (Repeated(0)) {
+    if (WallCursor == 0xFF) {
+      WallCursor = 0;
+    } else if (WallCursor != 0) {
+      WallCursor--;
+    } else if (WallPage) {
+      WallPage--;
+      WallCursor = 5;
+    } else {
+      WallPage = WallPages - 1;
+      WallCursor = count - WallPage * 6 - 1;
+    }
+  }
+  if (Repeated(1)) {
+    if (WallCursor == 0xFF) {
+      WallCursor = 0;
+    } else if (WallPage * 6 + WallCursor + 1 == count) {
+      WallPage = 0;
+      WallCursor = 0;
+    } else if (WallCursor < 5) {
+      WallCursor++;
+    } else {
+      WallPage++;
+      WallCursor = 0;
+    }
+  }
+  if (Repeated(2)) {
+    WallCursor = 0;
+    prevPage();
+  }
+  if (Repeated(3)) {
+    WallCursor = 0;
+    nextPage();
+  }
+}
+
+// 0x455510: ringtone / mail tone list
+static void UpdateToneList() {
+  int& cursor = ScrWork[SW_ToneCursor];
+  const int rows = ScrWork[SW_ToneRows];
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 13;
+    if (PointerMode()) ScrWork[SW_SettingsCursor] = 0xFF;
+    return;
+  }
+  if (PointerMode()) {
+    cursor = 0xFF;
+    for (int i = 0; i < 12 && i < rows; i++) {
+      if (Over(RowBox(i))) cursor = i;
+      if (Clicked(RowBox(i))) ClickConfirm = true;
+    }
+  }
+  if (Pressed(5) && cursor != 0xFF) {
+    ScrWork[SW_SetPopup] = PointerMode() ? 0xFF : 0;
+    ScrWork[SW_PhoneMode] = 29;
+  }
+  if (Repeated(0)) cursor = cursor == 0xFF ? 0 : (cursor == 0 ? rows - 1 : cursor - 1);
+  if (Repeated(1)) cursor = cursor == 0xFF || cursor >= rows - 1 ? 0 : cursor + 1;
+}
+
+static void PlayTone(int track) {
+  Audio::Channels[Audio::AC_BGM0]->Play("bgm", track, true, 0.0f);
+}
+
+// 0x457cb0: Play / Set popup over the tone list
+static void UpdateTonePopup() {
+  int& popup = ScrWork[SW_SetPopup];
+  const int row = ScrWork[SW_ToneCursor];
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = ToneListMode();
+    if (PointerMode()) ScrWork[SW_ToneCursor] = 0xFF;
+    return;
+  }
+  PointerPopupReset(popup, row != 0);
+  if (Pressed(5) && popup != 0xFF && row != 0xFF) {
+    const bool mail = !RingtoneScreen();
+    if (popup == 0 && row != 0) {  // play
+      ScrWork[SW_PhoneMode] = 31;
+      PreviewReturn = ToneListMode();
+      PreviewStart = SDL_GetTicks();
+      PreviewSound = (int)SoundList[row - 1];
+      MarqueeOffset = 0;
+      MarqueeTimer = 0x78;
+      PlayTone((int)Sounds[PreviewSound].Track);
+    } else {  // set
+      ScrWork[SW_PhoneMode] = 30;
+      ScrWork[mail ? SW_MailTone : SW_Ringtone] =
+          row == 0 ? 0xFFFF : (int)ToneValue(SoundList[row - 1], mail);
+    }
+    return;
+  }
+  if (Repeated(0) || Repeated(1)) {
+    if (popup == 0xFF)
+      popup = 0;
+    else if (row != 0)
+      popup ^= 1;
+  }
+}
+
+// 0x4584d0: "ringtone set" notice
+static void UpdateToneSet() {
+  PointerAnywhere();
+  if (Pressed(6) || Pressed(5)) {
+    ScrWork[SW_PhoneMode] = ToneListMode();
+    if (PointerMode()) ScrWork[SW_ToneCursor] = 0xFF;
+  }
+}
+
+// 0x458560: music player preview; leaving restores the scene's BGM
+static void UpdateTonePreview() {
+  PointerAnywhere();
+  if (Pressed(6) || Pressed(5)) {
+    ScrWork[SW_PhoneMode] = PreviewReturn;
+    const int bgm = ScrWork[Profile::ScriptVars::SW_BGMREQNO];
+    if (bgm != 0xFFFF)
+      Audio::Channels[Audio::AC_BGM0]->Play("bgm", bgm, GetFlag(2484), 0.0f);
+    else
+      Audio::Channels[Audio::AC_BGM0]->Stop(0.0f);
+  }
+}
+
+// 0x458810: Preview / Set popup over the wallpaper list
+static void UpdateWallpaperPopup() {
+  int& popup = ScrWork[SW_SetPopup];
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 14;
+    if (PointerMode()) WallCursor = 0xFF;
+    return;
+  }
+  PointerPopupReset(popup, true);
+  if (Pressed(5) && popup != 0xFF && WallCursor != 0xFF) {
+    const size_t i = (size_t)(WallPage * 6 + WallCursor);
+    if (i >= WallpaperList.size()) return;
+    const int id = (int)WallpaperList[i];
+    ScrWork[SW_Wallpaper] = id;
+    if (popup == 1) {
+      ScrWork[SW_WallpaperSet] = id;
+      ScrWork[SW_PhoneMode] = 36;
+    } else {
+      ScrWork[SW_PhoneMode] = 37;
+    }
+    return;
+  }
+  if (Repeated(0) || Repeated(1)) popup = popup == 0xFF ? 0 : popup ^ 1;
+}
+
+// 0x4589d0: "wallpaper set" notice
+static void UpdateWallpaperSet() {
+  PointerAnywhere();
+  if (Pressed(6) || Pressed(5)) {
+    ScrWork[SW_PhoneMode] = 14;
+    if (PointerMode()) WallCursor = 0xFF;
+  }
+}
+
+// 0x458a70: full-screen wallpaper preview
+static void UpdateWallpaperPreview() {
+  PointerAnywhere();
+  if (Pressed(6) || Pressed(5)) {
+    ScrWork[SW_PhoneMode] = 35;
+    if (PointerMode()) ScrWork[SW_SetPopup] = 0xFF;
+  }
+}
+
 static void Update() {
   ClickConfirm = false;
   switch (ScrWork[SW_PhoneMode]) {
@@ -1150,6 +1477,34 @@ static void Update() {
       break;
     case 20:
       UpdateMenu();
+      break;
+    case 13:
+      UpdateSettings();
+      break;
+    case 14:
+      UpdateWallpaperList();
+      break;
+    case 15:
+    case 16:
+      UpdateToneList();
+      break;
+    case 29:
+      UpdateTonePopup();
+      break;
+    case 30:
+      UpdateToneSet();
+      break;
+    case 31:
+      UpdateTonePreview();
+      break;
+    case 35:
+      UpdateWallpaperPopup();
+      break;
+    case 36:
+      UpdateWallpaperSet();
+      break;
+    case 37:
+      UpdateWallpaperPreview();
       break;
     default:
       break;  // script-driven screens, or not ported yet
@@ -1440,9 +1795,10 @@ static void DrawNumber(int contact, float x, float y) {
   }
 }
 
-// 0x454440: marching dots around the call display (8 frames, step every 5)
+// 0x454440 / 0x454170: marching dots around the call display and the music
+// player (8 frames, step every 5); top row of n dots, then 5 / n-1 / 4.
 static int DotTimer = 0, DotPhase = 0;
-static void DrawCallDots(float x, float y) {
+static void DrawDots(float x0, float y0, int n) {
   if (++DotTimer > 4) {
     DotTimer = 0;
     DotPhase = (DotPhase + 1) & 7;
@@ -1452,13 +1808,14 @@ static void DrawCallDots(float x, float y) {
     Spr((phase * 11 + 0x14f) * 1.5f, 1350.0f, 13.5f, 13.5f, dx, dy);
     phase = (phase + 1) & 7;
   };
-  float dx = x + 0x42, dy = y + 0x2a;
-  for (int i = 0; i < 12; i++, dx += 12) dot(dx, dy);
+  float dx = x0, dy = y0;
+  for (int i = 0; i < n; i++, dx += 12) dot(dx, dy);
   dx -= 12;
   for (int i = 0; i < 5; i++) dot(dx, dy += 12);
-  for (int i = 0; i < 11; i++) dot(dx -= 12, dy);
+  for (int i = 0; i < n - 1; i++) dot(dx -= 12, dy);
   for (int i = 0; i < 4; i++) dot(dx, dy -= 12);
 }
+static void DrawCallDots(float x, float y) { DrawDots(x + 0x42, y + 0x2a, 12); }
 
 // 0x44e040: calling (number, name, "Calling")
 static void DrawCalling(float x, float y) {
@@ -1702,6 +2059,125 @@ static void DrawAddressBook(float x, float y) {
   Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
 }
 
+// --- Settings screens -------------------------------------------------------
+// 0x44e440: settings menu
+static void DrawSettings(float x, float y) {
+  Spr(2656.5f, 1060.5f, 414.0f, 75.0f, x, y);
+  Spr(2656.5f, 838.5f, 414.0f, 219.0f, x, y + 0x32);
+  Spr(2656.5f, 579.0f, 414.0f, 181.5f, x, y + 0xc4);
+  const int cursor = ScrWork[SW_SettingsCursor];
+  if (cursor != 0xFF) Spr(2434.5f, 1012.5f, 21.0f, 36.0f, x + 0x10, y + 0x3e + cursor * 24 - 1);
+  for (int i = 0; i < 3; i++)
+    Text(x + 0x24, y + 0x3e + 24 * i, UiStrBase + 4 + i, cursor == i ? 0xFF1111 : 0, 20);
+  if (cursor != 0xFF)
+    TextLines(x + 0x12, y + 0xe0, 0xf0, UiStrBase + 0x2d + cursor, 0, 2, 0xFFFFFF, 20);
+}
+
+static void SprSheet(const char* name, float sx, float sy, float sw, float sh,
+                     float dx, float dy) {
+  const auto it = Profile::SpriteSheets.find(name);
+  if (it == Profile::SpriteSheets.end()) return;
+  Sprite spr(it->second, sx / 1.5f, sy / 1.5f, sw / 1.5f, sh / 1.5f);
+  Renderer->DrawSprite(spr, RectF(dx, dy, sw / 1.5f, sh / 1.5f),
+                       glm::vec4(1.0f, 1.0f, 1.0f, Alpha));
+}
+
+// 0x44e740: wallpaper thumbnails (PWCGTHUM, 12 per row) and names
+static void DrawWallpaperList(float x, float y) {
+  Header(5, x, y);
+  const float y0 = y + 0x1d;
+  Rect(x, y0, 414.0f, 432.0f, 0xFFFFFF);
+  if (WallCursor != 0xFF) Rect(x, y0 + WallCursor * 48, 414.0f, 72.0f, 0xFFBA95);
+  const int count = (int)WallpaperList.size();
+  for (int i = 0; i < 6; i++) {
+    const int idx = WallPage * 6 + i;
+    if (idx >= count) break;
+    const int id = (int)WallpaperList[idx];
+    const float rowY = y0 + 48.0f * i;
+    Rect(x, rowY + 0x2f - 0.2f, 414.0f, 2.1f, 0x808080);
+    SprSheet("PhoneWallpaperThumb", ((id % 12) * 42 + 1) * 1.5f,
+             ((id / 12) * 48 + 1) * 1.5f, 61.5f, 70.5f, x + 9, rowY);
+    if (ScrWork[SW_WallpaperSet] == id)
+      Spr(2562.0f, 1425.0f, 61.5f, 70.5f, x + 9, rowY);
+    TextLines(x + 0x3c, rowY, 0xd8, UiStrBase + Wallpapers[id].Name, 0, 2, 0, 24);
+  }
+  Ascii(1136, 154, TwoDigits(WallPage + 1) + "/" + TwoDigits(WallPages),
+        WallHover ? 0xFFEE88 : 0xFFFFFF, 16);
+  Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
+}
+
+// 0x44eb70 / 0x44ee70: ringtone / mail tone list ("none" first)
+static void DrawToneList(float x, float y, bool mail) {
+  Header(mail ? 7 : 6, x, y);
+  const float y0 = y + 0x1d;
+  Rect(x, y0, 414.0f, 432.0f, 0xFFFFFF);
+  const int cursor = ScrWork[SW_ToneCursor];
+  if (cursor != 0xFF) Rect(x, y0 + cursor * 24, 414.0f, 36.0f, 0xFFBA95);
+  const int value = ScrWork[mail ? SW_MailTone : SW_Ringtone];
+  if (value == 0xFFFF) {
+    Spr(2491.5f, 1012.5f, 27.0f, 36.0f, x, y0);
+  } else {
+    for (size_t i = 0; i < SoundList.size(); i++) {
+      if ((int)ToneValue(SoundList[i], mail) == value) {
+        Spr(2461.5f, 1012.5f, 27.0f, 36.0f, x, y0 + 24.0f * (i + 1));
+        break;
+      }
+    }
+  }
+  Text(x + 0x14, y0, UiStrBase + 0x17, 0, 24);
+  for (size_t i = 0; i < SoundList.size(); i++)
+    TextLines(x + 0x14, y0 + 24.0f * (i + 1), 0xfe,
+              UiStrBase + Sounds[SoundList[i]].Name, 0, 1, 0, 24);
+  Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
+}
+
+// 0x451b80: music player for the ringtone preview
+static void DrawTonePreview(float x, float y) {
+  Spr(877.5f, 1293.0f, 297.0f, 45.0f, x + 0x24, y + 0x3c);
+  DrawDots(x + 0x12, y + 0x26, 20);
+  // Title, scrolling one glyph every 8 frames when wider than 0xdc
+  const uint32_t name = UiStrBase + Sounds[PreviewSound].Name;
+  const std::vector<uint16_t> glyphs = Glyphs(name);
+  const Font& font = *Profile::Dialogue::DialogueFont;
+  const float size = 24;
+  float width = 0;
+  for (uint16_t g : glyphs) width += font.GetAdvanceWidth(g) * size / font.BitmapEmWidth;
+  size_t first = 0;
+  if (width > 0xdc) {
+    if (MarqueeTimer > 0) {
+      MarqueeTimer--;
+    } else {
+      MarqueeOffset++;
+      MarqueeTimer = 8;
+    }
+    if (MarqueeOffset >= (int)glyphs.size()) {
+      MarqueeOffset = 0;
+      MarqueeTimer = 0x78;
+    }
+    first = (size_t)MarqueeOffset;
+  }
+  std::vector<ProcessedTextGlyph> out;
+  float dx = x + 0x18;
+  for (size_t i = first; i < glyphs.size(); i++) {
+    const float adv = font.GetAdvanceWidth(glyphs[i]) * size / font.BitmapEmWidth;
+    if (dx + adv > x + 0x18 + 0xdc) break;
+    out.push_back(font.PlaceGlyph(glyphs[i], {dx, y + 0x94}, size,
+                                  DialogueColorPair{0xFFFFFF, 0}, 1.0f));
+    dx += adv;
+  }
+  Profile::Dialogue::DialogueFont->DrawProcessedText(out, Alpha);
+  Spr(2239.5f, 1060.5f, 414.0f, 75.0f, x, y + 0xec);
+  // Elapsed time as HH:MM:SS in keypad digits
+  const int secs = (int)((SDL_GetTicks() - PreviewStart) / 1000 % 360000);
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", (secs / 3600) % 100,
+                (secs / 60) % 60, secs % 60);
+  for (int i = 0; i < 8; i++) {
+    const float sx = buf[i] == ':' ? 0x29f * 1.5f : ((buf[i] - '0') * 24 + 0x14f) * 1.5f;
+    Spr(sx, 1366.5f, 33.0f, 45.0f, x + 0x28 + 24.0f * i, y + 0xd6);
+  }
+}
+
 static void DrawScreen(int mode, float x, float y) {
   switch (mode) {
     case 0:
@@ -1768,6 +2244,41 @@ static void DrawScreen(int mode, float x, float y) {
     case 20:
     case 21:
       DrawMenu(x, y);
+      break;
+    case 13:
+      DrawSettings(x, y);
+      break;
+    case 14:
+      DrawWallpaperList(x, y);
+      break;
+    case 15:
+    case 16:
+      DrawToneList(x, y, mode == 16);
+      break;
+    case 29:  // 0x4515e0
+      DrawToneList(x, y, !RingtoneScreen());
+      if (ScrWork[SW_ToneCursor] != 0)
+        Popup(0x15, 0x16, ScrWork[SW_SetPopup], x, y + 0x1d);
+      else
+        Popup(0x16, 0x270F, ScrWork[SW_SetPopup], x, y + 0x1d);
+      break;
+    case 30:  // 0x451b20
+      DrawToneList(x, y, !RingtoneScreen());
+      Notice(RingtoneScreen() ? 0x22 : 0x33, x, y + 0x1d, 0);
+      break;
+    case 31:
+      DrawTonePreview(x, y);
+      break;
+    case 35:  // 0x452070
+      DrawWallpaperList(x, y);
+      Popup(0x4c, 0x16, ScrWork[SW_SetPopup], x, y + 0x1d);
+      break;
+    case 36:  // 0x4520b0
+      DrawWallpaperList(x, y);
+      Notice(0x4b, x, y + 0x1d, 0);
+      break;
+    case 37:  // 0x45c4a0
+      DrawWallpaper(x, y);
       break;
     case 22:
       DrawReplyPreview(x, y);
