@@ -20,6 +20,7 @@ root.SpriteSheets["PhoneWallpaper"] = sheet(23, 4096, 2048);  -- PWCG.DDS, 9 per
 root.SpriteSheets["PhoneWallpaperThumb"] = sheet(24, 768, 768);  -- PWCGTHUM.DDS, 12 per row
 root.SpriteSheets["PhoneFrame"] = sheet(21, 3072, 1536);   -- PHONE2.DDS: full-screen frame for attachments
 root.SpriteSheets["PhoneAttach"] = sheet(15, 4096, 4096);  -- PACG.DDS: attachment pictures, 6 per row
+root.SpriteSheets["PhoneOpen"] = sheet(22, 3072, 1536);    -- PHONE3.DDS: handset turning into view
 root.SpriteSheets["Title"]    = sheet(30, 3072, 1536);
 root.SpriteSheets["TitleBg1"] = sheet(30, 3072, 1536);
 root.SpriteSheets["TitleBg2"] = sheet(30, 3072, 1536);

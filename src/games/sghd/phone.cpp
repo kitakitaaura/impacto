@@ -577,8 +577,13 @@ static bool Repeated(int slot) {
   return PADinputButtonRepeatDown & PADcustom[slot];
 }
 
+// Phone sound effects: the 0x26eee98 request block is SE channel 2,
+// played once (the executable also clears SW_SEREQNO + 2).
 static void PlaySE(int id) {
-  (void)id;  // TODO: phone sound effects (0x26eee98 request block)
+  using namespace Profile::ScriptVars;
+  ScrWork[SW_SEREQNO + 2] = 0xFFFF;
+  Audio::Channels[Audio::AC_SE2]->SetVolume((ScrWork[SW_SEVOL + 2] / 100.0f) * 0.3f);
+  Audio::Channels[Audio::AC_SE2]->Play("se", id, false, 0.0f);
 }
 
 // --- Dial keypad (10:37:17, 0x45a350) --------------------------------------
@@ -648,7 +653,6 @@ static void UpdateKeypad() {
   if (Pressed(5)) {
     if (cursor == 0xFF || count >= 4) return;
     PlaySE(0x9c);
-    ScrWork[4313] = 0xFFFF;
     KeypadInput[count++] = KeypadDigits[cursor];
     if (count < 4) return;
     SetFlag(SF_PhoneClose, 1);
@@ -1535,7 +1539,8 @@ static void SetDocPage(int page) {
   ScrWork[SW_DocScroll] = 0;
 }
 
-// 0x455a02 / 0x457900: "Attachment" chosen from a mail's options popup
+// 0x455a02 / 0x457900: "Attachment" chosen from a mail's options popup.
+// (Viewing attachments also runs an achievement check, 0x45cb10, not ported.)
 static void OpenAttachment(int mail, bool fromLink) {
   AttachIdx = (int)Mails[mail].F0C;
   const AttachmentRecord* a = CurrentAttachment();
@@ -1553,7 +1558,6 @@ static void OpenAttachment(int mail, bool fromLink) {
       ScrWork[SW_PhoneMode] = 206;
       AttachPos = 1;
       StartAttachTone(AttachData(0));
-      PlaySE(3);
       break;
     case 3:  // documents
       ScrWork[SW_PhoneMode] = 204;
@@ -1562,7 +1566,6 @@ static void OpenAttachment(int mail, bool fromLink) {
       ScrWork[SW_DocLayer] = ScrWork[SW_PhonePri];
       AttachPos = 0;
       SetDocPage(AttachPos++);
-      PlaySE(3);
       break;
     case 1:
     case 5:  // pictures (5: one wallpaper with a zoom effect)
@@ -1580,7 +1583,6 @@ static void OpenAttachment(int mail, bool fromLink) {
       AttachPos = 2;  // next (picture, wallpaper) pair
       SlideOther = false;
       SetFlag(1607, 0);
-      PlaySE(3);
       break;
     default:
       break;
@@ -1637,7 +1639,6 @@ static void UpdateSlides() {
     return;
   }
   UnlockWallpaper(AttachData(AttachPos++));
-  PlaySE(3);
   SlideOther = !SlideOther;
   if (SlideOther) {
     SetFlag(1606, 1);
@@ -1679,7 +1680,6 @@ static void UpdateDocument() {
       return;
     }
     SetDocPage(AttachPos++);
-    PlaySE(3);
     return;
   }
   if (Repeated(0) && scroll > 0) scroll--;
@@ -1694,7 +1694,6 @@ static void UpdateAttachTones() {
     const uint32_t next = AttachData(AttachPos++);
     if (next != 0xFF) {
       StartAttachTone(next);
-      PlaySE(3);
       return;
     }
   } else if (!back) {
@@ -2359,11 +2358,36 @@ static void OptionsPopup(bool canReply, bool attachment, float x, float y) {
     Popup(0xb, 0x270F, cursor, x, y + 0x1d);
 }
 
-// 0x44dc00 (idle part): standby screen
+// 0x44dc00: standby screen, with the incoming call or new mail panel
 static void DrawHome(float x, float y) {
   DrawWallpaper(x, y);
+  if (GetFlag(SF_Calling)) {
+    const int contact = ScrWork[SW_HomeContact];
+    Spr(2239.5f, 1.5f, 414.0f, 247.5f, x, y + 0x4c);
+    // Caller's number in small keypad digits
+    const std::vector<uint16_t> keys = Glyphs(ContactStrBase);
+    const std::vector<uint16_t> number = Glyphs(ContactStrBase + contact * 2 + 2);
+    float dx = x + 0x48;
+    for (uint16_t glyph : number) {
+      const auto it = std::find(keys.begin(), keys.end(), glyph);
+      if (it != keys.end())
+        Spr(((it - keys.begin()) * 18 + 0x5d5) * 1.5f, 976.5f, 24.0f, 33.0f, dx, y + 0xbe);
+      dx += 0x10;
+    }
+    // 0x45a730 (0): ringing handset, blinking
+    BlinkCounter = (BlinkCounter + 1) & 0x3f;
+    Spr(((BlinkCounter > 0x1f ? 0x60c : 0x5d4) + 1) * 1.5f, 1422.0f, 81.0f, 112.5f,
+        x + 0x32, y + 0x50);
+    TextLines(x + 0x18, y + 0xa2, 0x108, ContactStrBase + contact * 2 + 1, 0, 2, 0, 20);
+    TextLines(x + 0x6a, y + 0x6e, 0xc0, UiStrBase + 0xd, 0, 2, 0xFF1111, 32);
+    return;
+  }
   if (GetFlag(SF_NewMail)) {
     Spr(2239.5f, 1.5f, 414.0f, 247.5f, x, y + 0x4c);
+    // 0x45a730 (1): envelope, blinking
+    BlinkCounter = (BlinkCounter + 1) & 0x3f;
+    Spr(((BlinkCounter > 0x1f ? 0x614 : 0x5d4) + 1) * 1.5f, 1320.0f, 93.0f, 99.0f,
+        x + 0x69, y + 0x50);
     TextCentered(x, y + 0x96, UiStrBase + 9, 0xFF1111, 24, 0xfe);
   }
 }
@@ -2764,6 +2788,18 @@ static void DrawDocument() {
 static void Render() {
   const int ct = ScrWork[SW_PhoneCt];
   if (ct == 0) return;
+  // 0x45a670: the default handset turns into view (PHONE3.DDS, 7 frames a
+  // row, 2 ticks each) instead of sliding in.
+  if (ScrWork[SW_PhoneColor] == 0 && ct < 20) {
+    const auto it = Profile::SpriteSheets.find("PhoneOpen");
+    if (it == Profile::SpriteSheets.end()) return;
+    const int row = ct / 14, col = (ct - 14 * row) / 2;
+    Sprite spr(it->second, (float)(col * 0x124 + 1), (float)(row * 0x1f9 + 1),
+               436.5f / 1.5f, 756.0f / 1.5f);
+    Renderer->DrawSprite(spr, RectF(1248 / 1.5f, 0, 624 / 1.5f, 1080 / 1.5f),
+                         glm::vec4(1.0f));
+    return;
+  }
   const int left = 0x47a - 14 * ct;
   Alpha = std::min(ct * 256 / 20, 256) / 256.0f;
   // Handset
@@ -2773,6 +2809,7 @@ static void Render() {
   if (ScrWork[SW_PhoneMode] != 0x63) {
     // Status bar (0x44d830): signal / out of range
     Spr(2656.5f, GetFlag(SF_HasSignal) ? 1.5f : 49.5f, 414.0f, 45.0f, x, 0x73);
+    if (AnyUnreadMail()) Spr(835.5f, 1291.5f, 40.5f, 28.5f, x + 0xc4, 178.5f / 1.5f);
   }
   // Screen glass
   Spr(616.5f, 631.5f, 414.0f, 447.0f, x, 0x73);
