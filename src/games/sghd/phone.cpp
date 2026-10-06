@@ -305,6 +305,8 @@ static void SetCallTargets(bool incoming, int a, int b, int c, int d) {
 }
 
 static void Update();
+static void ReceiveMail(int slot, int mail);
+void DevReceiveMail(int slot, int mail) { ReceiveMail(slot, mail); }
 static int LineCount(uint32_t strNum, float width, float size);
 static std::vector<int> VisibleLinks(int mail, int scroll);
 struct LinkBox {

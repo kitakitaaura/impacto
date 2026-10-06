@@ -10,6 +10,7 @@
 #include "log.h"
 #include "vm/interface/input.h"
 #include "mem.h"
+#include "games/sghd/phone.h"
 
 namespace Impacto {
 namespace DevInput {
@@ -80,6 +81,10 @@ void Apply() {
       for (int i = from; i <= to; i++)
         out += fmt::format(" {}={}", i, cmd == "sw" ? ScrWork[i] : (int)GetFlag(i));
       ImpLog(LogLevel::Info, LogChannel::General, "DevInput {}:{}\n", cmd, out);
+    } else if (cmd == "phonemail") {
+      int slot = 0, mail = 0;
+      in >> slot >> mail;
+      UI::SGHD::Phone::DevReceiveMail(slot, mail);
     } else if (cmd == "move" && (in >> x >> y)) {
       PointerAt(x, y);
     } else if (cmd == "click" && (in >> x >> y)) {

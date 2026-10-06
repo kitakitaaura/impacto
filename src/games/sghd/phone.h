@@ -34,6 +34,9 @@ void Tick();
 
 void RenderLayer(uint32_t layer);
 
+// Dev/test: deliver a mail as 10:37:12 would (DevInput "phonemail").
+void DevReceiveMail(int slot, int mail);
+
 }  // namespace Phone
 }  // namespace SGHD
 }  // namespace UI
