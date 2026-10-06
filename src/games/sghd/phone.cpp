@@ -291,6 +291,7 @@ static void SetCallTargets(bool incoming, int a, int b, int c, int d) {
 }
 
 static void Update();
+static int LineCount(uint32_t strNum, float width, float size);
 
 void Instruction(Sc3VmThread* thread) {
   StartInstruction;
@@ -500,6 +501,150 @@ static void UpdateAddressBook() {
   if (Repeated(1)) cursor = cursor == 0xFF || cursor >= count - 1 ? 0 : cursor + 1;
 }
 
+static uint32_t MailStr(int mail, int k) {
+  return mail >= 0 && mail < (int)Mails.size() ? Mails[mail].Strings + k : 0;
+}
+
+// Body + subject line counts for the viewer's scroll range (SW 6814).
+static void CountMailLines(int mail) {
+  const int body = LineCount(MailStr(mail, 2), 0x116, 24);
+  const int subject = std::max(1, LineCount(MailStr(mail, 0), 0xfe, 24));
+  ScrWork[SW_MailLines] = body + 2 + subject;
+}
+
+static bool HasAttachment(int mail) {
+  return mail >= 0 && mail < (int)Mails.size() && Mails[mail].F0C != None;
+}
+
+// 0x455df0: Inbox / Outbox
+static void UpdateMailFolders() {
+  int& cursor = ScrWork[SW_MailFolder];
+  if (Pressed(6)) {
+    ScrWork[SW_MenuCursor] = 0;
+    ScrWork[SW_PhoneMode] = 20;
+    return;
+  }
+  if (Pressed(5) && cursor != 0xFF) {
+    ScrWork[SW_MailPage] = 0;
+    ScrWork[SW_MailCursor] = 0;
+    ScrWork[SW_PhoneMode] = cursor == 0 ? 3 : 2;
+    return;
+  }
+  if (Repeated(0) || Repeated(1)) cursor = cursor == 0xFF ? 0 : cursor ^ 1;
+}
+
+// Shared list paging (0x457fe0 / 0x458b40). Returns true on confirm.
+static bool UpdateMailList(const std::vector<uint32_t>& list) {
+  const int count = (int)list.size();
+  int& page = ScrWork[SW_MailPage];
+  int& cursor = ScrWork[SW_MailCursor];
+  if (count == 0) {
+    if (Pressed(6) || Pressed(5)) ScrWork[SW_PhoneMode] = 1;
+    return false;
+  }
+  const int pages = (count - 1) / 12;
+  ScrWork[SW_MailPages] = pages;
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 1;
+    return false;
+  }
+  if (Pressed(5) && cursor != 0xFF) return true;
+  if (Repeated(0)) {
+    if (cursor == 0xFF) cursor = 0;
+    else if (cursor > 0) cursor--;
+    else if (page > 0) { page--; cursor = 11; }
+    else { page = pages; cursor = count - page * 12 - 1; }
+  }
+  if (Repeated(1) && cursor != 0xFF) {
+    if (cursor < 11 && page * 12 + cursor < count - 1) cursor++;
+    else { page = page < pages ? page + 1 : 0; cursor = 0; }
+  } else if (Repeated(1)) {
+    cursor = 0;
+  }
+  if (Repeated(2)) { cursor = 0; page = page > 0 ? page - 1 : pages; }
+  if (Repeated(3)) { cursor = 0; page = page < pages ? page + 1 : 0; }
+  const size_t i = (size_t)page * 12 + (size_t)cursor;
+  if (cursor != 0xFF && i < list.size()) ScrWork[SW_MailSelected] = (int)list[i];
+  return false;
+}
+
+static void UpdateSentList() {
+  if (!UpdateMailList(SentList)) return;
+  ScrWork[6813] = 0;
+  CountMailLines(ScrWork[SW_MailSelected]);
+  ScrWork[SW_PhoneMode] = 4;
+}
+
+static void UpdateInbox() {
+  if (!UpdateMailList(InboxList)) return;
+  const int mail = ScrWork[SW_MailSelected];
+  ScrWork[6813] = 0;
+  CountMailLines(mail);
+  if (GetFlag(SF_Receiving) && mail == ScrWork[SW_RecvMail] &&
+      mail >= 0 && mail < (int)Mails.size() && Mails[mail].Reply != None) {
+    ScrWork[SW_PhoneMode] = 27;  // reply to the mail being received
+  } else {
+    ScrWork[SW_PhoneMode] = 5;
+  }
+  SetMailStatus(mail, 1, 1);  // read
+}
+
+static void ScrollMail() {
+  int& scroll = ScrWork[6813];
+  const int lines = ScrWork[SW_MailLines];
+  if (Repeated(0) && scroll > 0) scroll--;
+  if (Repeated(1) && lines > 12 && scroll < lines - 12) scroll++;
+}
+
+// 0x4592e0: viewing a sent mail
+static void UpdateSentView() {
+  const int mail = ScrWork[SW_MailSelected];
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 2;
+    return;
+  }
+  if (Pressed(5)) {
+    if (HasAttachment(mail)) {
+      ScrWork[6816] = 0;
+      ScrWork[SW_PhoneMode] = 19;
+    } else {
+      ScrWork[SW_PhoneMode] = 2;
+    }
+    return;
+  }
+  ScrollMail();
+}
+
+// 0x459530: viewing a received mail
+static void UpdateInboxView() {
+  const int mail = ScrWork[SW_MailSelected];
+  const bool scripted =
+      GetMailStatus(mail, 3) == 1 && GetMailStatus(mail, 2) == 0;
+  if (Pressed(6) || (Pressed(5) && scripted)) {
+    if (scripted) {  // the story waits on this mail: hand back to the script
+      SetFlag(SF_PhoneClose, 1);
+      SetFlag(2606, 1);
+      SetFlag(2611, 1);
+    } else {
+      ScrWork[SW_PhoneMode] = 3;
+    }
+    return;
+  }
+  if (Pressed(5)) {
+    const bool canReply = GetFlag(SF_HasSignal) && GetMailStatus(mail, 2) == 1 &&
+                          GetMailStatus(mail, 4) == 0 && mail >= 0 &&
+                          mail < (int)Mails.size() && Mails[mail].Reply != None;
+    if (HasAttachment(mail) || canReply) {
+      ScrWork[6816] = 0;
+      ScrWork[SW_PhoneMode] = 19;
+    } else {
+      ScrWork[SW_PhoneMode] = 3;
+    }
+    return;
+  }
+  ScrollMail();
+}
+
 // What the selected contact allows for the armed call/mail event.
 static void ContactActions(bool& canIn, bool& canOut) {
   const int cursor = ScrWork[SW_ContactCursor];
@@ -536,6 +681,21 @@ static void UpdateContactPopup() {
 
 static void Update() {
   switch (ScrWork[SW_PhoneMode]) {
+    case 1:
+      UpdateMailFolders();
+      break;
+    case 2:
+      UpdateSentList();
+      break;
+    case 3:
+      UpdateInbox();
+      break;
+    case 4:
+      UpdateSentView();
+      break;
+    case 5:
+      UpdateInboxView();
+      break;
     case 7:
       UpdateContactPopup();
       break;
@@ -610,6 +770,163 @@ static float Text(float x, float y, uint32_t strNum, uint32_t color,
   return GetTextWidth(glyphs);
 }
 
+// --- Phone text (0x4451e0): word-wrapped SC3 text ------------------------
+// Words break at space glyphs (0 / 63), long words split, 0x00 breaks the
+// line, 0x09..0x0B mark a mail reply link (as LanguageBarrier's re-
+// implementation of the same routine).
+struct PhoneGlyph {
+  uint16_t Id;
+  float Advance;
+  DialogueColorPair Colors;
+  int Link;  // -1: not a link
+};
+using PhoneLine = std::vector<PhoneGlyph>;
+
+static std::vector<PhoneLine> WrapText(uint32_t strNum, float width, float size,
+                                       uint32_t color) {
+  std::vector<PhoneLine> lines(1);
+  if (!TableBuffer) return lines;
+  const Font& font = *Profile::Dialogue::DialogueFont;
+  width -= 4;  // CoZ's phone x padding (2 per side)
+
+  struct Word {
+    std::vector<PhoneGlyph> Glyphs;
+    float Cost = 0;
+    bool LeadingSpace = false;
+    bool Break = false;
+  };
+  std::vector<Word> words(1);
+  Sc3VmThread dummy;
+  dummy.ScriptBufferId = TableBuffer;
+  dummy.IpOffset = Str(strNum);
+  DialogueColorPair colors{color, 0};
+  int link = -1, links = 0;
+  StringToken token;
+  for (int guard = 0; guard < 4096; guard++) {
+    token.Read(&dummy);
+    if (token.Type == STT_EndOfString) break;
+    switch (token.Type) {
+      case STT_LineBreak:
+        words.back().Break = true;
+        words.emplace_back();
+        break;
+      case STT_SetColor:
+        if (token.Val_Expr >= 0 && token.Val_Expr < (int)Profile::Dialogue::ColorTable.size())
+          colors = Profile::Dialogue::ColorTable[token.Val_Expr];
+        break;
+      case STT_RubyBaseStart:  // 0x09: link start
+        link = links++;
+        break;
+      case STT_RubyTextEnd:  // 0x0B: link end
+        link = -1;
+        break;
+      case STT_Character: {
+        const uint16_t id = token.Val_Uint16;
+        const float adv = font.GetAdvanceWidth(id) * size / font.BitmapEmWidth;
+        if (id == 0 || id == 63) {
+          words.emplace_back();
+          words.back().LeadingSpace = true;
+        } else if (words.back().Cost + adv > width && !words.back().Glyphs.empty()) {
+          words.emplace_back();
+        }
+        words.back().Glyphs.push_back({id, adv, colors, link});
+        words.back().Cost += adv;
+      } break;
+      default:
+        break;
+    }
+  }
+
+  float x = 0;
+  for (Word& w : words) {
+    if (x > 0 && x + w.Cost > width) {
+      lines.emplace_back();
+      x = 0;
+    }
+    size_t first = 0;
+    if (x == 0 && w.LeadingSpace && !w.Glyphs.empty()) {
+      first = 1;  // no leading space at the start of a line
+      x -= w.Glyphs[0].Advance;
+    }
+    for (size_t i = first; i < w.Glyphs.size(); i++) lines.back().push_back(w.Glyphs[i]);
+    x += w.Cost;
+    if (w.Break) {
+      lines.emplace_back();
+      x = 0;
+    }
+  }
+  if (lines.size() > 1 && lines.back().empty()) lines.pop_back();
+  return lines;
+}
+
+// 0x4427f0
+static int LineCount(uint32_t strNum, float width, float size) {
+  return (int)WrapText(strNum, width, size, 0).size();
+}
+
+// Draws lines [skip, skip + count) one glyph-size apart; returns lines drawn.
+static int TextLines(float x, float y, float width, uint32_t strNum, int skip,
+                     int count, uint32_t color, float size, int selectedLink = -2,
+                     uint32_t linkColor = 0, uint32_t selectedColor = 0) {
+  const std::vector<PhoneLine> lines = WrapText(strNum, width, size, color);
+  const Font& font = *Profile::Dialogue::DialogueFont;
+  std::vector<ProcessedTextGlyph> out;
+  int drawn = 0;
+  for (int i = std::max(skip, 0); i < (int)lines.size() && drawn < count; i++, drawn++) {
+    float dx = x + 2;
+    const float dy = y + drawn * size;
+    for (const PhoneGlyph& g : lines[i]) {
+      DialogueColorPair c = g.Colors;
+      if (g.Link >= 0 && selectedLink != -2)
+        c.TextColor = g.Link == selectedLink ? selectedColor : linkColor;
+      out.push_back(font.PlaceGlyph(g.Id, {dx, dy}, size, c, 1.0f));
+      dx += g.Advance;
+    }
+  }
+  Profile::Dialogue::DialogueFont->DrawProcessedText(out, Alpha);
+  return drawn;
+}
+
+// 0x445f10: plain ASCII (dates, page numbers). Glyph ids follow the CoZ
+// patch font order (LanguageBarrier's Charset.utf8): ' ', digits, A-Z, a-z,
+// then U+3000 and punctuation from id 64.
+static void Ascii(float x, float y, const std::string& text, uint32_t color,
+                  float size) {
+  static constexpr std::string_view order =
+      " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  static constexpr std::string_view punct = "/:-;!?'.@#%~*";
+  const Font& font = *Profile::Dialogue::DialogueFont;
+  std::vector<ProcessedTextGlyph> out;
+  float dx = x;
+  for (char c : text) {
+    uint16_t id = 0;
+    if (const size_t i = order.find(c); i != std::string_view::npos)
+      id = (uint16_t)i;
+    else if (const size_t j = punct.find(c); j != std::string_view::npos)
+      id = (uint16_t)(64 + j);
+    out.push_back(font.PlaceGlyph(id, {dx, y}, size, DialogueColorPair{color, 0}, 1.0f));
+    dx += font.GetAdvanceWidth(id) * size / font.BitmapEmWidth;
+  }
+  Profile::Dialogue::DialogueFont->DrawProcessedText(out, Alpha);
+}
+
+static float MeasureText(uint32_t strNum, float size) {
+  if (!TableBuffer) return 0.0f;
+  Sc3VmThread dummy;
+  dummy.ScriptBufferId = TableBuffer;
+  dummy.IpOffset = Str(strNum);
+  return GetTextWidth(TextLayoutPlainLine(
+      &dummy, 255, *Profile::Dialogue::DialogueFont, size,
+      DialogueColorPair{0, 0}, 1.0f, glm::vec2(0.0f), TextAlignment::Left));
+}
+
+// Centered on x + 0x8a like the executable (width capped at maxWidth).
+static void TextCentered(float x, float y, uint32_t strNum, uint32_t color,
+                         float size, float maxWidth) {
+  const float w = std::min(MeasureText(strNum, size), maxWidth);
+  Text(x + 0x8a - w / 2, y, strNum, color, size);
+}
+
 // 0x45bf20: screen header bar + title
 struct HeaderStyle {
   uint8_t Str, Style;
@@ -634,11 +951,176 @@ static void Popup(int strA, int strB, int cursor, float x, float y) {
     Text(x2 + 0x14, y2 + 24, UiStrBase + strB, cursor == 1 ? 0xFF1111 : 0, 20);
 }
 
+// Raw SC3 glyph ids of a table string (0x80xx pairs, 0xFF ends).
+static std::vector<uint16_t> Glyphs(uint32_t strNum) {
+  std::vector<uint16_t> out;
+  if (!TableBuffer) return out;
+  const auto& buf = ScriptBuffers[TableBuffer];
+  for (size_t p = Str(strNum); p + 1 < buf.size() && buf[p] != 0xFF;) {
+    if (buf[p] & 0x80) {
+      out.push_back((uint16_t)(((buf[p] & 0x7F) << 8) | buf[p + 1]));
+      p += 2;
+    } else {
+      p++;  // control byte
+    }
+  }
+  return out;
+}
+
+// 0x44e040 helper: the contact's number in big keypad digits. String
+// ContactStrBase is the keypad alphabet; each glyph's index picks the digit.
+static void DrawNumber(int contact, float x, float y) {
+  const std::vector<uint16_t> keys = Glyphs(ContactStrBase);
+  const std::vector<uint16_t> number = Glyphs(ContactStrBase + contact * 2 + 2);
+  float dx = x;
+  for (uint16_t glyph : number) {
+    const auto it = std::find(keys.begin(), keys.end(), glyph);
+    if (it != keys.end()) {
+      const int idx = (int)(it - keys.begin());
+      Spr((idx * 24 + 0x14f) * 1.5f, 1366.5f, 33.0f, 45.0f, dx, y);
+    }
+    dx += 24;
+  }
+}
+
+// 0x454440: marching dots around the call display (8 frames, step every 5)
+static int DotTimer = 0, DotPhase = 0;
+static void DrawCallDots(float x, float y) {
+  if (++DotTimer > 4) {
+    DotTimer = 0;
+    DotPhase = (DotPhase + 1) & 7;
+  }
+  int phase = DotPhase;
+  const auto dot = [&](float dx, float dy) {
+    Spr((phase * 11 + 0x14f) * 1.5f, 1350.0f, 13.5f, 13.5f, dx, dy);
+    phase = (phase + 1) & 7;
+  };
+  float dx = x + 0x42, dy = y + 0x2a;
+  for (int i = 0; i < 12; i++, dx += 12) dot(dx, dy);
+  dx -= 12;
+  for (int i = 0; i < 5; i++) dot(dx, dy += 12);
+  for (int i = 0; i < 11; i++) dot(dx -= 12, dy);
+  for (int i = 0; i < 4; i++) dot(dx, dy -= 12);
+}
+
+// 0x44e040: calling (number, name, "Calling")
+static void DrawCalling(float x, float y) {
+  Rect(x, y, 414.0f, 468.0f, 0x000000);
+  DrawCallDots(x, y);
+  const int contact = ScrWork[SW_HomeContact];
+  DrawNumber(contact, x + 6, y + 0xd4);
+  Text(x + 0x12, y + 0xb0, ContactStrBase + contact * 2 + 1, 0xFFFFFF, 24);
+  TextCentered(x, y + 0x40, UiStrBase + 0xf, 0xFFFFFF, 24, 0xc0);
+}
+
+static std::string TwoDigits(int v) {
+  char buf[8];
+  std::snprintf(buf, sizeof(buf), "%02d", v % 100);
+  return buf;
+}
+
+// 0x45a880: message panel (e.g. empty folder)
+static void Notice(int str, float x, float y, uint32_t color) {
+  Spr(2239.5f, 252.0f, 414.0f, 210.0f, x, y + 0x54);
+  TextLines(x + 0x1d, y + 0x64, 0xdc, UiStrBase + str, 0, 4, color, 20);
+}
+
+// 0x44f8f0: Inbox / Outbox
+static void DrawMailFolders(float x, float y) {
+  Spr(2656.5f, 763.5f, 414.0f, 294.0f, x, y);
+  Spr(2656.5f, 579.0f, 414.0f, 181.5f, x, y + 0xc4);
+  const int cursor = ScrWork[SW_MailFolder];
+  if (cursor != 0xFF) Spr(2434.5f, 1012.5f, 21.0f, 36.0f, x + 0x10, y + 0x3e + cursor * 24 - 1);
+  Text(x + 0x24, y + 0x3e, UiStrBase + 0, cursor == 0 ? 0xFF1111 : 0, 20);
+  Text(x + 0x24, y + 0x56, UiStrBase + 1, cursor == 1 ? 0xFF1111 : 0, 20);
+  if (cursor != 0xFF)
+    TextLines(x + 0x12, y + 0xe0, 0xf0, UiStrBase + 0x2a + cursor, 0, 2, 0xFFFFFF, 20);
+}
+
+// 0x451650 / 0x452220: sent / received mail list
+static void DrawMailList(float x, float y, bool inbox) {
+  const auto& list = inbox ? InboxList : SentList;
+  Header(inbox ? 0 : 1, x, y);
+  const float y0 = y + 0x1d;
+  Rect(x, y0, 414.0f, 432.0f, 0xFFFFFF);
+  if (list.empty()) {
+    Notice(2, x, y, 0);
+    return;
+  }
+  const int cursor = ScrWork[SW_MailCursor];
+  if (cursor != 0xFF) Rect(x, y0 + cursor * 24, 414.0f, 36.0f, 0xFFBA95);
+  const int first = ScrWork[SW_MailPage] * 12;
+  for (int i = 0; i < 12 && first + i < (int)list.size(); i++) {
+    const int mail = (int)list[first + i];
+    const float rowY = y0 + i * 24;
+    float iconX = 616.5f;  // sent, or unread
+    if (inbox) {
+      if (GetMailStatus(mail, 4)) iconX = 694.5f;
+      else if (GetMailStatus(mail, 1)) iconX = 655.5f;
+    }
+    Spr(iconX, 577.5f, 36.0f, 36.0f, x, rowY);
+    if (HasAttachment(mail)) Spr(733.5f, 577.5f, 36.0f, 36.0f, x + 0x60, rowY);
+    const MailRecord& m = Mails[mail];
+    Ascii(x + 0x18, rowY, TwoDigits(m.Date / 100) + "/" + TwoDigits(m.Date % 100), 0, 24);
+    float tx = x + 0x18 + 0x48 + (HasAttachment(mail) ? 0x18 : 0);
+    TextLines(tx, rowY, x + 0x116 - tx, MailStr(mail, 1), 0, 1, 0, 24);
+  }
+  Ascii(1136, 154,
+        TwoDigits(ScrWork[SW_MailPage] + 1) + "/" + TwoDigits(ScrWork[SW_MailPages] + 1),
+        0xFFFFFF, 16);
+  Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
+}
+
+// 0x452750 / 0x452ef0: reading a mail (12 lines, scrolled by SW 6813)
+static void DrawMailView(float x, float y, bool inbox) {
+  const int mail = ScrWork[SW_MailSelected];
+  if (mail < 0 || mail >= (int)Mails.size()) return;
+  const MailRecord& m = Mails[mail];
+  Header(inbox ? 2 : 3, x, y);
+  const float y0 = y + 0x1d;
+  Rect(x, y0, 414.0f, 432.0f, 0xFFFFFF);
+  const int scroll = ScrWork[6813];
+  float ty = y0;
+  int left = 12;
+  if (scroll == 0) {  // date line
+    Spr(2239.5f, 1012.5f, 36.0f, 36.0f, x, ty);
+    if (HasAttachment(mail)) Spr(2395.5f, 1012.5f, 36.0f, 36.0f, x + 0xfc, ty);
+    Ascii(x + 0x18, ty,
+          TwoDigits(m.Date / 100) + "/" + TwoDigits(m.Date % 100) + " " +
+              TwoDigits(m.Time / 100) + ":" + TwoDigits(m.Time % 100),
+          0, 24);
+    ty += 24;
+    left--;
+  }
+  if (scroll <= 1) {  // to / from
+    Spr(inbox ? 2278.5f : 2317.5f, 1012.5f, 36.0f, 36.0f, x, ty);
+    TextLines(x + 0x18, ty, 0xfc, MailStr(mail, 1), 0, 1, 0, 24);
+    ty += 24;
+    left--;
+  }
+  const int subjLines = std::max(1, LineCount(MailStr(mail, 0), 0xfe, 24));
+  if (scroll <= subjLines + 2) {  // subject + rule
+    const int skip = scroll > 2 ? scroll - 2 : 0;
+    if (scroll <= 2) Spr(2356.5f, 1012.5f, 36.0f, 36.0f, x, ty);
+    const int n = TextLines(x + 0x18, ty, 0xfc, MailStr(mail, 0), skip, subjLines - skip, 0, 24);
+    ty += n * 24;
+    left -= n;
+    Rect(x, ty - 1, 414.0f, 1.5f, 0x000000);
+  }
+  const int bodySkip = scroll < subjLines + 2 ? 0 : scroll - subjLines - 2;
+  TextLines(x, ty, 0x114, MailStr(mail, 2), bodySkip, left, 0, 24);
+  if (ScrWork[SW_MailLines] > 12) {
+    if (scroll > 0) Spr(2239.5f, 943.5f, 414.0f, 13.5f, x, y0);
+    if (scroll + 12 < ScrWork[SW_MailLines]) Spr(2239.5f, 960.0f, 414.0f, 13.5f, x, y0 + 0x117);
+  }
+  Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
+}
+
 // 0x44dc00 (idle part): standby screen
 static void DrawHome(float x, float y) {
   if (GetFlag(SF_NewMail)) {
     Spr(2239.5f, 1.5f, 414.0f, 247.5f, x, y + 0x4c);
-    Text(x + 0x50, y + 0x96, UiStrBase + 9, 0xFF1111, 24);
+    TextCentered(x, y + 0x96, UiStrBase + 9, 0xFF1111, 24, 0xfe);
   }
 }
 
@@ -675,6 +1157,21 @@ static void DrawScreen(int mode, float x, float y) {
     case 0:
       DrawHome(x, y);
       break;
+    case 1:
+      DrawMailFolders(x, y);
+      break;
+    case 2:
+      DrawMailList(x, y, false);
+      break;
+    case 3:
+      DrawMailList(x, y, true);
+      break;
+    case 4:
+      DrawMailView(x, y, false);
+      break;
+    case 5:
+      DrawMailView(x, y, true);
+      break;
     case 6:
       DrawAddressBook(x, y);
       break;
@@ -690,6 +1187,16 @@ static void DrawScreen(int mode, float x, float y) {
       else
         Popup(0x10, 0x270F, popup, x, y + 0x1d);
     } break;
+    case 10:
+      DrawCalling(x, y);
+      break;
+    case 11:  // connected: "Voice Only" (0x44e2c0)
+      Rect(x, y, 414.0f, 468.0f, 0x000000);
+      Spr(502.5f, 1293.0f, 276.0f, 54.0f, x + 0x2e, y + 0x88);
+      break;
+    case 12:  // 0x44e3a0
+      Spr(616.5f, 109.5f, 414.0f, 468.0f, x, y);
+      break;
     case 20:
     case 21:
       DrawMenu(x, y);
