@@ -307,6 +307,11 @@ static void SetCallTargets(bool incoming, int a, int b, int c, int d) {
 static void Update();
 static int LineCount(uint32_t strNum, float width, float size);
 static std::vector<int> VisibleLinks(int mail, int scroll);
+struct LinkBox {
+  int Link;
+  RectF Box;
+};
+static std::vector<LinkBox> LinkBoxes(int mail, int scroll, float x, float y0);
 
 void Instruction(Sc3VmThread* thread) {
   StartInstruction;
@@ -413,8 +418,67 @@ void Instruction(Sc3VmThread* thread) {
 }
 
 // --- Input -----------------------------------------------------------------
+// Mouse and touch follow the executable's phone hitboxes (group 20 at
+// 0x531a68, 1080p pixels relative to the phone screen at 1360,217): hovering
+// moves the cursor and a click only confirms on a hitbox. Right click backs
+// out like the cancel button.
+static bool ClickConfirm = false;  // a hitbox click this frame acts as confirm
+
 static bool Pressed(int slot) {
+  if (slot == 5) return (PADinputButtonWentDown & PADcustom[slot]) || ClickConfirm;
   return (PADinputButtonWentDown | PADinputMouseWentDown) & PADcustom[slot];
+}
+
+static bool PointerMode() {
+  return Input::CurrentInputDevice == Input::Device::Mouse ||
+         Input::CurrentInputDevice == Input::Device::Touch;
+}
+static float ScreenOriginX() {
+  return (float)(0x47a - 14 * ScrWork[SW_PhoneCt] + 0x29);
+}
+// Phone-screen-relative hitbox (1080p px) in design units
+static RectF Box(float x, float y, float w, float h) {
+  return RectF(ScreenOriginX() + x / 1.5f, 145.0f + y / 1.5f, w / 1.5f, h / 1.5f);
+}
+static bool Over(const RectF& r) {
+  return PointerMode() && r.ContainsPoint(Input::CurMousePos);
+}
+static bool Moved() { return Input::PrevMousePos != Input::CurMousePos; }
+static bool Clicked(const RectF& r) {
+  return (PADinputMouseWentDown & PAD1A) && r.ContainsPoint(Input::CurMousePos);
+}
+static RectF RowBox(int i) { return Box(0, 43 + 36.0f * i, 414, 36); }  // 12..23
+static RectF ScreenBox() { return Box(0, 0, 414, 476); }                // 1
+
+// List rows: hover picks the row, a click on a row confirms.
+static void PointerList(int& cursor, int count) {
+  if (!PointerMode()) return;
+  for (int i = 0; i < count && i < 12; i++) {
+    if (Over(RowBox(i)) && Moved()) cursor = i;
+    if (Clicked(RowBox(i))) {
+      cursor = i;
+      ClickConfirm = true;
+    }
+  }
+}
+// Two-option popups (hitboxes 10, 11)
+static void PointerPopup(int& cursor, int options) {
+  if (!PointerMode()) return;
+  for (int i = 0; i < options; i++) {
+    const RectF r = Box(30, 179 + 36.0f * i, 353, 36);
+    if (Over(r) && Moved()) cursor = i;
+    if (Clicked(r)) {
+      cursor = i;
+      ClickConfirm = true;
+    }
+  }
+}
+// Scrolling text: wheel and the up/down strips (46, 47); returns -1/0/1.
+static int PointerScroll() {
+  if (!PointerMode()) return 0;
+  if (Input::MouseWheelDeltaY > 0 || Clicked(Box(0, 39, 414, 28))) return -1;
+  if (Input::MouseWheelDeltaY < 0 || Clicked(Box(0, 452, 414, 28))) return 1;
+  return 0;
 }
 static bool Repeated(int slot) {
   return PADinputButtonRepeatDown & PADcustom[slot];
@@ -427,6 +491,7 @@ static void PlaySE(int id) {
 // --- Per-screen update handlers (0x45a030) ----------------------------------
 // 0x454be0: home screen
 static void UpdateHome() {
+  if (Clicked(ScreenBox())) ClickConfirm = true;
   if (Pressed(6)) {
     SetFlag(SF_HomeCancel, 1);
     SetFlag(SF_PhoneClose, 1);
@@ -461,6 +526,19 @@ static void UpdateHome() {
 // Main menu (LanguageBarrier's reimplementation of the same handler).
 static void UpdateMenu() {
   int& cursor = ScrWork[SW_MenuCursor];
+  if (PointerMode()) {
+    // Icons: mail (85,71) / address book (241,71) / network (85,199) /
+    // settings (241,199)
+    const RectF icons[4] = {Box(85, 71, 88, 88), Box(241, 71, 88, 88),
+                            Box(85, 199, 88, 88), Box(241, 199, 88, 88)};
+    for (int i = 0; i < 4; i++) {
+      if (Over(icons[i]) && Moved()) cursor = i;
+      if (Clicked(icons[i])) {
+        cursor = i;
+        ClickConfirm = true;
+      }
+    }
+  }
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = 0;
     cursor = 0xFF;
@@ -493,6 +571,7 @@ static void UpdateMenu() {
 static void UpdateAddressBook() {
   int& cursor = ScrWork[SW_ContactCursor];
   const int count = (int)ContactList.size();
+  PointerList(cursor, count);
   if (Pressed(6)) {
     if (!GetFlag(SF_NoBackFromBook)) {
       ScrWork[SW_MenuCursor] = 1;
@@ -534,6 +613,14 @@ static bool HasAttachment(int mail) {
 // 0x455df0: Inbox / Outbox
 static void UpdateMailFolders() {
   int& cursor = ScrWork[SW_MailFolder];
+  for (int i = 0; i < 2 && PointerMode(); i++) {
+    const RectF r = Box(0, 90 + 36.0f * i, 414, 36);
+    if (Over(r) && Moved()) cursor = i;
+    if (Clicked(r)) {
+      cursor = i;
+      ClickConfirm = true;
+    }
+  }
   if (Pressed(6)) {
     ScrWork[SW_MenuCursor] = 0;
     ScrWork[SW_PhoneMode] = 20;
@@ -559,6 +646,14 @@ static bool UpdateMailList(const std::vector<uint32_t>& list) {
   }
   const int pages = (count - 1) / 12;
   ScrWork[SW_MailPages] = pages;
+  if (PointerMode()) {
+    const int onPage = std::min(12, count - page * 12);
+    PointerList(cursor, onPage);
+    if (Clicked(Box(0, 0, 207, 43)) || Input::MouseWheelDeltaY > 0)
+      page = page > 0 ? page - 1 : pages;
+    if (Clicked(Box(207, 0, 207, 43)) || Input::MouseWheelDeltaY < 0)
+      page = page < pages ? page + 1 : 0;
+  }
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = 1;
     return false;
@@ -608,13 +703,22 @@ static void UpdateInbox() {
 static void ScrollMail() {
   int& scroll = ScrWork[6813];
   const int lines = ScrWork[SW_MailLines];
-  if (Repeated(0) && scroll > 0) scroll--;
-  if (Repeated(1) && lines > 12 && scroll < lines - 12) scroll++;
+  const int wheel = PointerScroll();
+  if ((Repeated(0) || wheel < 0) && scroll > 0) scroll--;
+  if ((Repeated(1) || wheel > 0) && lines > 12 && scroll < lines - 12) scroll++;
+}
+
+// Viewers: a click on the page (not on the scroll strips) continues.
+static void PointerPageConfirm() {
+  if (Clicked(ScreenBox()) && !Clicked(Box(0, 39, 414, 28)) &&
+      !Clicked(Box(0, 452, 414, 28)))
+    ClickConfirm = true;
 }
 
 // 0x4592e0: viewing a sent mail
 static void UpdateSentView() {
   const int mail = ScrWork[SW_MailSelected];
+  PointerPageConfirm();
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = 2;
     return;
@@ -634,6 +738,7 @@ static void UpdateSentView() {
 // 0x459530: viewing a received mail
 static void UpdateInboxView() {
   const int mail = ScrWork[SW_MailSelected];
+  PointerPageConfirm();
   const bool scripted =
       GetMailStatus(mail, 3) == 1 && GetMailStatus(mail, 2) == 0;
   if (Pressed(6) || (Pressed(5) && scripted)) {
@@ -700,6 +805,7 @@ static void UpdateMailOptions() {
   const bool canReply = CanReplyFromView(mail);
   const int options = (canReply ? 1 : 0) + (HasAttachment(mail) ? 1 : 0);
   int& cursor = ScrWork[6816];
+  PointerPopup(cursor, options);
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = ScrWork[SW_MailFolder] != 0 ? 4 : 5;
     return;
@@ -729,6 +835,18 @@ static void UpdateLinkMail() {
   const int mail = ScrWork[SW_MailSelected];
   int& scroll = ScrWork[6813];
   const int lines = ScrWork[SW_MailLines];
+  if (PointerMode()) {
+    const int wheel = PointerScroll();
+    if (wheel < 0 && scroll > 0) scroll--;
+    if (wheel > 0 && lines > 12 && scroll < lines - 12) scroll++;
+    for (const LinkBox& b : LinkBoxes(mail, scroll, ScreenOriginX(), 145.0f + 0x1d)) {
+      if (Over(b.Box) && Moved()) SelectedLink = b.Link;
+      if (Clicked(b.Box)) {
+        SelectedLink = b.Link;
+        ClickConfirm = true;
+      }
+    }
+  }
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = 3;
     return;
@@ -772,6 +890,7 @@ static void UpdateLinkMailOptions() {
   const bool canReply = CanReplyByLink(mail);
   const int options = (canReply ? 1 : 0) + (HasAttachment(mail) ? 1 : 0);
   int& cursor = ScrWork[6816];
+  PointerPopup(cursor, options);
   if (Pressed(6)) {
     SelectedLink = 0xFF;
     ScrWork[SW_PhoneMode] = 27;
@@ -798,6 +917,10 @@ static void UpdateLinkMailOptions() {
 static void UpdateReplyPreview() {
   int& scroll = ScrWork[6818];
   const int lines = ScrWork[6819];
+  PointerPageConfirm();
+  const int wheel = PointerScroll();
+  if (wheel < 0 && scroll > 0) scroll--;
+  if (wheel > 0 && lines > 12 && scroll < lines - 12) scroll++;
   if (Pressed(6) && ReturnMode == 27) {
     ScrWork[6860] = None;
     ScrWork[6861] = None;
@@ -820,6 +943,7 @@ static void UpdateReplyPreview() {
 
 // 0x459140: Send?
 static void UpdateSendConfirm() {
+  PointerPopup(ScrWork[SW_MailPopupCursor], 1);
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = 22;
     return;
@@ -842,6 +966,7 @@ static void UpdateSending() {
 }
 
 static void UpdateMailSent() {
+  if (Clicked(ScreenBox())) ClickConfirm = true;
   if ((Pressed(5) || Pressed(6)) && ScrWork[SW_MailSelected] != 0xFFFF)
     ScrWork[SW_PhoneMode] = ReturnMode;
 }
@@ -861,6 +986,7 @@ static void UpdateContactPopup() {
   bool canIn, canOut;
   ContactActions(canIn, canOut);
   int& popup = ScrWork[SW_CallPopupCursor];
+  PointerPopup(popup, canIn && canOut ? 2 : 1);
   if (Pressed(6)) {
     ScrWork[SW_PhoneMode] = 6;
     return;
@@ -881,6 +1007,7 @@ static void UpdateContactPopup() {
 }
 
 static void Update() {
+  ClickConfirm = false;
   switch (ScrWork[SW_PhoneMode]) {
     case 1:
       UpdateMailFolders();
@@ -966,6 +1093,18 @@ static void Spr(float sx, float sy, float sw, float sh, float dx, float dy,
   Sprite s(*sheet, sx / 1.5f, sy / 1.5f, sw / 1.5f, sh / 1.5f);
   Renderer->DrawSprite(s, RectF(dx, dy, sw / 1.5f, sh / 1.5f),
                        glm::vec4(1.0f, 1.0f, 1.0f, alpha));
+}
+
+// 0x45c4a0: home wallpaper (texture slot 170 = PWCG.DDS, 9 per row)
+static void DrawWallpaper(float x, float y) {
+  const int id = ScrWork[SW_Wallpaper];
+  if (id == 0xFFFF || id < 0) return;
+  const auto it = Profile::SpriteSheets.find("PhoneWallpaper");
+  if (it == Profile::SpriteSheets.end()) return;
+  const float sx = (id % 9) * 415.0f, sy = (id / 9) * 477.0f;
+  Sprite s(it->second, sx / 1.5f, sy / 1.5f, 414.0f / 1.5f, 476.0f / 1.5f);
+  Renderer->DrawSprite(s, RectF(x, y, 414.0f / 1.5f, 476.0f / 1.5f),
+                       glm::vec4(1.0f, 1.0f, 1.0f, Alpha));
 }
 
 static glm::vec4 Rgb(uint32_t c, float alpha) {
@@ -1332,6 +1471,23 @@ static std::vector<int> VisibleLinks(int mail, int scroll) {
   return out;
 }
 
+// Screen rectangles of the visible link glyphs (mouse picking in screen 27).
+static std::vector<LinkBox> LinkBoxes(int mail, int scroll, float x, float y0) {
+  int skip, count;
+  BodyWindow(mail, scroll, true, skip, count);
+  const std::vector<PhoneLine> lines = WrapText(MailStr(mail, 2), 0x116, 24, 0);
+  std::vector<LinkBox> out;
+  float ty = y0 + (12 - count) * 24;
+  for (int i = skip; i < (int)lines.size() && i < skip + count; i++, ty += 24) {
+    float dx = x + 2;
+    for (const PhoneGlyph& g : lines[i]) {
+      if (g.Link >= 0) out.push_back({g.Link, RectF(dx, ty, g.Advance, 24)});
+      dx += g.Advance;
+    }
+  }
+  return out;
+}
+
 static void DrawMailPage(float x, float y, int mail, int scroll, int lines,
                          const MailPage& page) {
   if (mail < 0 || mail >= (int)Mails.size()) return;
@@ -1417,6 +1573,7 @@ static void OptionsPopup(bool canReply, bool attachment, float x, float y) {
 
 // 0x44dc00 (idle part): standby screen
 static void DrawHome(float x, float y) {
+  DrawWallpaper(x, y);
   if (GetFlag(SF_NewMail)) {
     Spr(2239.5f, 1.5f, 414.0f, 247.5f, x, y + 0x4c);
     TextCentered(x, y + 0x96, UiStrBase + 9, 0xFF1111, 24, 0xfe);

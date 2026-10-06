@@ -16,6 +16,7 @@ root.SpriteSheets["PhoneB"] = sheet(17, 3072, 1536);
 root.SpriteSheets["PhoneC"] = sheet(18, 3072, 1536);
 root.SpriteSheets["PhoneD"] = sheet(19, 3072, 1536);
 root.SpriteSheets["PhoneE"] = sheet(20, 3072, 1536);
+root.SpriteSheets["PhoneWallpaper"] = sheet(23, 4096, 2048);  -- PWCG.DDS, 9 per row
 root.SpriteSheets["Title"]    = sheet(30, 3072, 1536);
 root.SpriteSheets["TitleBg1"] = sheet(30, 3072, 1536);
 root.SpriteSheets["TitleBg2"] = sheet(30, 3072, 1536);
