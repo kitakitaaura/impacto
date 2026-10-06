@@ -106,6 +106,20 @@ struct MailRecord {
   uint32_t F18, F1C, F20, F24, F28, F2C, F30;
 };
 std::vector<MailRecord> Mails;
+
+// Reply mail for a body link: the record's eight reply slots (link 0 is Reply).
+static int ReplyFor(int mail, int link) {
+  if (mail < 0 || mail >= (int)Mails.size() || link < 0 || link > 7) return None;
+  const MailRecord& m = Mails[mail];
+  const uint32_t slots[8] = {m.Reply, m.F18, m.F1C, m.F20, m.F24, m.F28, m.F2C, m.F30};
+  return (int)slots[link];
+}
+
+// Screen to return to after sending (0x190ba60): 5 = reply from the viewer,
+// 27 = reply chosen by link.
+static int ReturnMode = 5;
+static int SelectedLink = 0xFF;  // 0x190b9ec
+static int SendTimer = 0;        // 0x190b37c
 uint32_t TableBuffer = 0;     // [0x1901274]
 uint32_t UiStrBase = 0;       // [0x1901278]
 uint32_t ContactStrBase = 0;  // [0x190127c]
@@ -292,6 +306,7 @@ static void SetCallTargets(bool incoming, int a, int b, int c, int d) {
 
 static void Update();
 static int LineCount(uint32_t strNum, float width, float size);
+static std::vector<int> VisibleLinks(int mail, int scroll);
 
 void Instruction(Sc3VmThread* thread) {
   StartInstruction;
@@ -582,6 +597,7 @@ static void UpdateInbox() {
   CountMailLines(mail);
   if (GetFlag(SF_Receiving) && mail == ScrWork[SW_RecvMail] &&
       mail >= 0 && mail < (int)Mails.size() && Mails[mail].Reply != None) {
+    SelectedLink = 0xFF;
     ScrWork[SW_PhoneMode] = 27;  // reply to the mail being received
   } else {
     ScrWork[SW_PhoneMode] = 5;
@@ -645,6 +661,191 @@ static void UpdateInboxView() {
   ScrollMail();
 }
 
+// Viewer reply rule (0x455780): signal, waiting for a reply, not yet replied.
+static bool CanReplyFromView(int mail) {
+  return GetFlag(SF_HasSignal) && GetMailStatus(mail, 2) == 1 &&
+         GetMailStatus(mail, 4) == 0 && mail >= 0 && mail < (int)Mails.size() &&
+         Mails[mail].Reply != None;
+}
+
+// Link-mail reply rule (0x457620): the mail being received, a link chosen.
+static bool CanReplyByLink(int mail) {
+  return GetFlag(SF_HasSignal) && GetFlag(SF_Receiving) &&
+         mail == ScrWork[SW_RecvMail] && mail >= 0 && mail < (int)Mails.size() &&
+         Mails[mail].Reply != None && GetMailStatus(mail, 4) == 0 &&
+         SelectedLink != 0xFF;
+}
+
+static void SetReplyDraft(int reply) {
+  ScrWork[6817] = reply;
+  ScrWork[6818] = 0;
+  ScrWork[6819] = LineCount(MailStr(reply, 2), 0x116, 24) + 1 +
+                  std::max(1, LineCount(MailStr(reply, 0), 0xfe, 24));
+}
+
+// Sending a reply (0x456bb0 / 0x459140): mark it sent and the original replied.
+static void SendReply() {
+  const int reply = ScrWork[6817];
+  const int original = ScrWork[SW_MailSelected];
+  SetMailStatus(reply, 0, 1);
+  if (GetFlag(2610)) SentList.insert(SentList.begin(), (uint32_t)reply);
+  if (original != 0xFFFF) SetMailStatus(original, 4, 1);
+  SendTimer = 60;
+  ScrWork[SW_PhoneMode] = 9;
+}
+
+// 0x455780: Reply / Attachments over a mail
+static void UpdateMailOptions() {
+  const int mail = ScrWork[SW_MailSelected];
+  const bool canReply = CanReplyFromView(mail);
+  const int options = (canReply ? 1 : 0) + (HasAttachment(mail) ? 1 : 0);
+  int& cursor = ScrWork[6816];
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = ScrWork[SW_MailFolder] != 0 ? 4 : 5;
+    return;
+  }
+  if (Pressed(5) && cursor != 0xFF) {
+    if (canReply && cursor == 0) {
+      ScrWork[SW_PhoneMode] = 22;
+      ReturnMode = 5;
+      if (GetMailStatus(mail, 3) != 0) {  // the story writes this reply
+        SetFlag(SF_PhoneClose, 1);
+        SetFlag(2606, 1);
+        SetFlag(2611, 1);
+      }
+      SetReplyDraft(Mails[mail].Reply);
+    }
+    // Attachments (0x190ba80 table) are not ported yet.
+    return;
+  }
+  if (Repeated(0) || Repeated(1)) {
+    if (cursor == 0xFF) cursor = 0;
+    else if (options > 1) cursor ^= 1;
+  }
+}
+
+// 0x456f40: received mail with selectable reply links
+static void UpdateLinkMail() {
+  const int mail = ScrWork[SW_MailSelected];
+  int& scroll = ScrWork[6813];
+  const int lines = ScrWork[SW_MailLines];
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 3;
+    return;
+  }
+  if (Pressed(5)) {
+    if (HasAttachment(mail) || CanReplyByLink(mail)) {
+      ScrWork[6816] = 0;
+      ScrWork[SW_PhoneMode] = 28;
+    } else if (!(GetFlag(SF_HasSignal) && GetFlag(SF_Receiving) &&
+                 mail == ScrWork[SW_RecvMail])) {
+      ScrWork[SW_PhoneMode] = 3;
+    }
+    return;
+  }
+  const bool up = Repeated(0), down = Repeated(1);
+  if (!up && !down) return;
+  std::vector<int> vis = VisibleLinks(mail, scroll);
+  const auto at = std::find(vis.begin(), vis.end(), SelectedLink);
+  const int cur = at == vis.end() ? -1 : (int)(at - vis.begin());
+  bool scrolled = false;
+  if (up) {
+    if (cur == -1 && !vis.empty()) { SelectedLink = vis.front(); return; }
+    if (cur > 0) { SelectedLink = vis[cur - 1]; return; }
+    if (scroll > 0) { scroll--; scrolled = true; }
+  } else {
+    if (cur == -1 && !vis.empty()) { SelectedLink = vis.front(); return; }
+    if (cur >= 0 && cur + 1 < (int)vis.size()) { SelectedLink = vis[cur + 1]; return; }
+    if (lines > 12 && scroll < lines - 12) { scroll++; scrolled = true; }
+  }
+  if (!scrolled) return;
+  vis = VisibleLinks(mail, scroll);
+  if (vis.empty())
+    SelectedLink = 0xFF;
+  else
+    SelectedLink = up ? vis.front() : vis.back();
+}
+
+// 0x457620: Reply / Attachments over the link mail
+static void UpdateLinkMailOptions() {
+  const int mail = ScrWork[SW_MailSelected];
+  const bool canReply = CanReplyByLink(mail);
+  const int options = (canReply ? 1 : 0) + (HasAttachment(mail) ? 1 : 0);
+  int& cursor = ScrWork[6816];
+  if (Pressed(6)) {
+    SelectedLink = 0xFF;
+    ScrWork[SW_PhoneMode] = 27;
+    return;
+  }
+  if (Pressed(5) && cursor != 0xFF) {
+    if (canReply && cursor == 0) {
+      ScrWork[SW_PhoneMode] = 22;
+      ReturnMode = 27;
+      const int reply = ReplyFor(mail, SelectedLink);
+      ScrWork[6860] = mail;
+      ScrWork[6861] = reply;
+      SetReplyDraft(reply);
+    }
+    return;
+  }
+  if (Repeated(0) || Repeated(1)) {
+    if (cursor == 0xFF) cursor = 0;
+    else if (options > 1) cursor ^= 1;
+  }
+}
+
+// 0x456bb0: reply preview
+static void UpdateReplyPreview() {
+  int& scroll = ScrWork[6818];
+  const int lines = ScrWork[6819];
+  if (Pressed(6) && ReturnMode == 27) {
+    ScrWork[6860] = None;
+    ScrWork[6861] = None;
+    SelectedLink = 0xFF;
+    ScrWork[SW_PhoneMode] = 27;
+    return;
+  }
+  if (Pressed(5)) {
+    if (ReturnMode == 27) {
+      ScrWork[SW_MailPopupCursor] = 0;
+      ScrWork[SW_PhoneMode] = 40;
+    } else {
+      SendReply();
+    }
+    return;
+  }
+  if (Repeated(0) && scroll > 0) scroll--;
+  if (Repeated(1) && lines > 12 && scroll < lines - 12) scroll++;
+}
+
+// 0x459140: Send?
+static void UpdateSendConfirm() {
+  if (Pressed(6)) {
+    ScrWork[SW_PhoneMode] = 22;
+    return;
+  }
+  if (Pressed(5) && ScrWork[SW_MailPopupCursor] != 0xFF) {
+    SendReply();
+    return;
+  }
+  if (Repeated(0) || Repeated(1)) ScrWork[SW_MailPopupCursor] = 0;
+}
+
+// 0x459d10: sending (1 s), then "Mail Sent!" (0x456eb0)
+static void UpdateSending() {
+  if (SendTimer > 0) {
+    SendTimer--;
+    return;
+  }
+  PlaySE(0xa2);
+  ScrWork[SW_PhoneMode] = 24;
+}
+
+static void UpdateMailSent() {
+  if ((Pressed(5) || Pressed(6)) && ScrWork[SW_MailSelected] != 0xFFFF)
+    ScrWork[SW_PhoneMode] = ReturnMode;
+}
+
 // What the selected contact allows for the armed call/mail event.
 static void ContactActions(bool& canIn, bool& canOut) {
   const int cursor = ScrWork[SW_ContactCursor];
@@ -698,6 +899,27 @@ static void Update() {
       break;
     case 7:
       UpdateContactPopup();
+      break;
+    case 9:
+      UpdateSending();
+      break;
+    case 19:
+      UpdateMailOptions();
+      break;
+    case 22:
+      UpdateReplyPreview();
+      break;
+    case 24:
+      UpdateMailSent();
+      break;
+    case 27:
+      UpdateLinkMail();
+      break;
+    case 28:
+      UpdateLinkMailOptions();
+      break;
+    case 40:
+      UpdateSendConfirm();
       break;
     case 0:
       UpdateHome();
@@ -876,6 +1098,8 @@ static int TextLines(float x, float y, float width, uint32_t strNum, int skip,
     float dx = x + 2;
     const float dy = y + drawn * size;
     for (const PhoneGlyph& g : lines[i]) {
+      if (g.Link >= 0 && g.Link == selectedLink && selectedLink >= 0)
+        Renderer->DrawQuad(RectF(dx, dy, g.Advance, size), Rgb(0x0000FF, Alpha));
       DialogueColorPair c = g.Colors;
       if (g.Link >= 0 && selectedLink != -2)
         c.TextColor = g.Link == selectedLink ? selectedColor : linkColor;
@@ -1071,18 +1295,53 @@ static void DrawMailList(float x, float y, bool inbox) {
   Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
 }
 
-// 0x452750 / 0x452ef0: reading a mail (12 lines, scrolled by SW 6813)
-static void DrawMailView(float x, float y, bool inbox) {
-  const int mail = ScrWork[SW_MailSelected];
+// Mail page layout shared by the viewers (0x452750 / 0x452ef0), the link
+// mail (0x450c90) and the reply preview (0x450190): optional date line, To /
+// From line, subject (wrapped at 254) with a rule, then the body (276) in 12
+// lines scrolled by `scroll`.
+struct MailPage {
+  int Header;
+  bool DateLine;
+  float ToIconX;  // 2278.5 "frm", 2317.5 "To"
+  bool Links;     // body links selectable (0x445640)
+};
+
+// Which body lines a scroll position shows: first body line and line count.
+static void BodyWindow(int mail, int scroll, bool dateLine, int& skip, int& count) {
+  const int h = dateLine ? 2 : 1;
+  const int subj = std::max(1, LineCount(MailStr(mail, 0), 0xfe, 24));
+  count = 12;
+  if (dateLine && scroll == 0) count--;
+  if (scroll <= h - 1) count--;
+  if (scroll <= subj + h) count -= subj - std::max(0, scroll - h);
+  skip = scroll < subj + h ? 0 : scroll - subj - h;
+}
+
+// Link ids shown in the body at this scroll position (0x442580), in order.
+static std::vector<int> VisibleLinks(int mail, int scroll) {
+  int skip, count;
+  BodyWindow(mail, scroll, true, skip, count);
+  const std::vector<PhoneLine> lines = WrapText(MailStr(mail, 2), 0x116, 24, 0);
+  std::array<bool, 8> seen{};
+  for (int i = skip; i < (int)lines.size() && i < skip + count; i++)
+    for (const PhoneGlyph& g : lines[i])
+      if (g.Link >= 0 && g.Link < 8) seen[g.Link] = true;
+  std::vector<int> out;
+  for (int i = 0; i < 8; i++)
+    if (seen[i]) out.push_back(i);
+  return out;
+}
+
+static void DrawMailPage(float x, float y, int mail, int scroll, int lines,
+                         const MailPage& page) {
   if (mail < 0 || mail >= (int)Mails.size()) return;
   const MailRecord& m = Mails[mail];
-  Header(inbox ? 2 : 3, x, y);
+  Header(page.Header, x, y);
   const float y0 = y + 0x1d;
   Rect(x, y0, 414.0f, 432.0f, 0xFFFFFF);
-  const int scroll = ScrWork[6813];
+  const int h = page.DateLine ? 2 : 1;
   float ty = y0;
-  int left = 12;
-  if (scroll == 0) {  // date line
+  if (page.DateLine && scroll == 0) {
     Spr(2239.5f, 1012.5f, 36.0f, 36.0f, x, ty);
     if (HasAttachment(mail)) Spr(2395.5f, 1012.5f, 36.0f, 36.0f, x + 0xfc, ty);
     Ascii(x + 0x18, ty,
@@ -1090,30 +1349,70 @@ static void DrawMailView(float x, float y, bool inbox) {
               TwoDigits(m.Time / 100) + ":" + TwoDigits(m.Time % 100),
           0, 24);
     ty += 24;
-    left--;
   }
-  if (scroll <= 1) {  // to / from
-    Spr(inbox ? 2278.5f : 2317.5f, 1012.5f, 36.0f, 36.0f, x, ty);
+  if (scroll <= h - 1) {
+    Spr(page.ToIconX, 1012.5f, 36.0f, 36.0f, x, ty);
     TextLines(x + 0x18, ty, 0xfc, MailStr(mail, 1), 0, 1, 0, 24);
     ty += 24;
-    left--;
   }
-  const int subjLines = std::max(1, LineCount(MailStr(mail, 0), 0xfe, 24));
-  if (scroll <= subjLines + 2) {  // subject + rule
-    const int skip = scroll > 2 ? scroll - 2 : 0;
-    if (scroll <= 2) Spr(2356.5f, 1012.5f, 36.0f, 36.0f, x, ty);
-    const int n = TextLines(x + 0x18, ty, 0xfc, MailStr(mail, 0), skip, subjLines - skip, 0, 24);
+  const int subj = std::max(1, LineCount(MailStr(mail, 0), 0xfe, 24));
+  if (scroll <= subj + h) {
+    const int skip = std::max(0, scroll - h);
+    if (scroll <= h) Spr(2356.5f, 1012.5f, 36.0f, 36.0f, x, ty);
+    const int n = TextLines(x + 0x18, ty, 0xfc, MailStr(mail, 0), skip, subj - skip, 0, 24);
     ty += n * 24;
-    left -= n;
     Rect(x, ty - 1, 414.0f, 1.5f, 0x000000);
   }
-  const int bodySkip = scroll < subjLines + 2 ? 0 : scroll - subjLines - 2;
-  TextLines(x, ty, 0x114, MailStr(mail, 2), bodySkip, left, 0, 24);
-  if (ScrWork[SW_MailLines] > 12) {
+  int bodySkip, bodyCount;
+  BodyWindow(mail, scroll, page.DateLine, bodySkip, bodyCount);
+  if (page.Links && GetMailStatus(mail, 4) == 0)
+    TextLines(x, ty, 0x114, MailStr(mail, 2), bodySkip, bodyCount, 0, 24,
+              SelectedLink, 0x0000FF, 0xFFFFFF);
+  else
+    TextLines(x, ty, 0x114, MailStr(mail, 2), bodySkip, bodyCount, 0, 24);
+  if (lines > 12) {
     if (scroll > 0) Spr(2239.5f, 943.5f, 414.0f, 13.5f, x, y0);
-    if (scroll + 12 < ScrWork[SW_MailLines]) Spr(2239.5f, 960.0f, 414.0f, 13.5f, x, y0 + 0x117);
+    if (scroll + 12 < lines) Spr(2239.5f, 960.0f, 414.0f, 13.5f, x, y0 + 0x117);
   }
   Spr(2239.5f, 465.0f, 414.0f, 432.0f, x, y0);
+}
+
+static void DrawMailView(float x, float y, bool inbox) {
+  DrawMailPage(x, y, ScrWork[SW_MailSelected], ScrWork[6813], ScrWork[SW_MailLines],
+               {inbox ? 2 : 3, true, inbox ? 2278.5f : 2317.5f, false});
+}
+
+static void DrawLinkMail(float x, float y) {
+  DrawMailPage(x, y, ScrWork[SW_MailSelected], ScrWork[6813], ScrWork[SW_MailLines],
+               {2, true, 2278.5f, true});
+}
+
+static void DrawReplyPreview(float x, float y) {
+  DrawMailPage(x, y, ScrWork[6817], ScrWork[6818], ScrWork[6819],
+               {10, false, 2317.5f, false});
+}
+
+// "Sending mail" / "Mail Sent!" panel with the blinking envelope (0x453950 /
+// 0x450840)
+static int BlinkCounter = 0;  // 0x18ffbb0
+static void DrawSendPanel(float x, float y, int str) {
+  DrawReplyPreview(x, y);
+  Spr(2239.5f, 1.5f, 414.0f, 247.5f, x, y + 0x4c);
+  BlinkCounter = (BlinkCounter + 1) & 0x3f;
+  const int sx = (BlinkCounter > 0x1f ? 0x614 : 0x5d4) + 1;
+  Spr(sx * 1.5f, 1320.0f, 93.0f, 99.0f, x + 0x69, y + 0x50);
+  TextCentered(x, y + 0x96, UiStrBase + str, 0xFF1111, 24, 0xfe);
+}
+
+// Reply / Attachments popup choice (0x44f7d0, 0x4514b0)
+static void OptionsPopup(bool canReply, bool attachment, float x, float y) {
+  const int cursor = ScrWork[6816];
+  if (canReply && attachment)
+    Popup(0xa, 0xb, cursor, x, y + 0x1d);
+  else if (canReply)
+    Popup(0xa, 0x270F, cursor, x, y + 0x1d);
+  else if (attachment)
+    Popup(0xb, 0x270F, cursor, x, y + 0x1d);
 }
 
 // 0x44dc00 (idle part): standby screen
@@ -1187,6 +1486,9 @@ static void DrawScreen(int mode, float x, float y) {
       else
         Popup(0x10, 0x270F, popup, x, y + 0x1d);
     } break;
+    case 9:
+      DrawSendPanel(x, y, 0xe);
+      break;
     case 10:
       DrawCalling(x, y);
       break;
@@ -1197,12 +1499,35 @@ static void DrawScreen(int mode, float x, float y) {
     case 12:  // 0x44e3a0
       Spr(616.5f, 109.5f, 414.0f, 468.0f, x, y);
       break;
+    case 19: {
+      const int mail = ScrWork[SW_MailSelected];
+      DrawMailView(x, y, ScrWork[SW_MailFolder] == 0);
+      OptionsPopup(CanReplyFromView(mail), HasAttachment(mail), x, y);
+    } break;
     case 20:
     case 21:
       DrawMenu(x, y);
       break;
-    case 34:  // mail compose + Send/Save (compose screen not ported yet)
-      Rect(x, y + 0x1d, 414.0f, 424.5f, 0xFFFFFF);
+    case 22:
+      DrawReplyPreview(x, y);
+      break;
+    case 24:
+      DrawSendPanel(x, y, 0xc);
+      break;
+    case 27:
+      DrawLinkMail(x, y);
+      break;
+    case 28: {
+      const int mail = ScrWork[SW_MailSelected];
+      DrawLinkMail(x, y);
+      OptionsPopup(CanReplyByLink(mail), HasAttachment(mail), x, y);
+    } break;
+    case 40:
+      DrawReplyPreview(x, y);
+      Popup(0x36, 0x270F, ScrWork[SW_MailPopupCursor], x, y + 0x1d);
+      break;
+    case 34:  // 0x452030: preview + Send/Save
+      DrawReplyPreview(x, y);
       Popup(0x36, 0x37, ScrWork[SW_MailPopupCursor], x, y + 0x1d);
       break;
     case 39: {  // address book + call popup (0x452160)
