@@ -1,5 +1,6 @@
 #include "profile/data/savesystem.h"
 #include "devinput.h"
+#include "games/sghd/phone.h"
 #include "game.h"
 
 #include "text/dialoguepage.h"
@@ -356,6 +357,9 @@ void UpdateSystem(float dt) {
     Vm::Interface::UpdatePADHoldInput(updateInterval);
     Vm::Interface::UpdateKBHoldInput(updateInterval);
     UpdateGameState(updateInterval);
+    if (Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD) {
+      UI::SGHD::Phone::Tick();
+    }
 
     for (DrawComponentType value :
          magic_enum::enum_values<DrawComponentType>()) {

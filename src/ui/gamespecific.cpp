@@ -8,6 +8,7 @@
 #include "../profile/games/chlcc/delusiontrigger.h"
 
 #include "../games/chlcc/delusiontrigger.h"
+#include "../games/sghd/phone.h"
 #include "../effects/chlcc/butterflyeffect.h"
 #include "../effects/chlcc/bubbleseffect.h"
 #include "../effects/chlcc/eyecatch.h"
@@ -148,6 +149,9 @@ void RenderMain() {
 
 void RenderLayer(uint32_t layer) {
   int layerInt = static_cast<int>(layer);
+  if (Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD) {
+    SGHD::Phone::RenderLayer(layer);
+  }
   switch (Profile::GameSpecific::GameSpecificType) {
     case GameSpecificType::CHLCC: {
       CHLCC::EyecatchEffect::GetInstance().RenderLayer(layer);

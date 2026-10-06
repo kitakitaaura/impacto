@@ -1,4 +1,5 @@
 #include "inst_system.h"
+#include "../games/sghd/phone.h"
 
 #include "inst_macros.inc"
 
@@ -1037,6 +1038,25 @@ VmInstruction(InstMSinit) {
     ScrWork[SW_SYSMESALPHA] = 255;
 
     ScrWork[SW_PLATFORM] = Profile::Game::PlatformId;
+  }
+
+  if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD &&
+      initType == 2) {
+    // STEINS;GATE Steam new-game clear (Game.exe 0x469800): flag bytes
+    // [0,100) [150,225) [300,400), ScrWork [0,1600) [2100,3300)
+    // [4300,7300) except 4340..4347, then the phone data.
+    const auto clearFlagBytes = [](size_t from, size_t to) {
+      std::fill(FlagWork.begin() + from, FlagWork.begin() + to, 0);
+    };
+    clearFlagBytes(0, 100);
+    clearFlagBytes(150, 225);
+    clearFlagBytes(300, 400);
+    std::fill(ScrWork.begin(), ScrWork.begin() + 1600, 0);
+    std::fill(ScrWork.begin() + 2100, ScrWork.begin() + 3300, 0);
+    for (int i = 4300; i < 7300; i++) {
+      if (i < 4340 || i > 4347) ScrWork[i] = 0;
+    }
+    UI::SGHD::Phone::Reset();
   }
 
   if (initType == 0 || initType == 1) {

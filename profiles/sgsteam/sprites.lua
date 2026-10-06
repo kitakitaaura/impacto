@@ -10,6 +10,12 @@ root.SpriteSheets["Font"]     = sheet(9, 3072, 2208);   -- FONT.PNG
 root.SpriteSheets["Menu"]     = sheet(5, 3072, 2048);   -- CONFIG.DDS (guess)
 -- Steam merged the PS3's Title/TitleBg1/TitleBg2 into one TITLE_CHIP sheet,
 -- so the title menu sprites need remapping before it looks right.
+-- Phone body/screen kit, one sheet per handset colour (ScrWork 6856).
+root.SpriteSheets["Phone"]  = sheet(16, 3072, 1536);   -- PHONE.DDS
+root.SpriteSheets["PhoneB"] = sheet(17, 3072, 1536);
+root.SpriteSheets["PhoneC"] = sheet(18, 3072, 1536);
+root.SpriteSheets["PhoneD"] = sheet(19, 3072, 1536);
+root.SpriteSheets["PhoneE"] = sheet(20, 3072, 1536);
 root.SpriteSheets["Title"]    = sheet(30, 3072, 1536);
 root.SpriteSheets["TitleBg1"] = sheet(30, 3072, 1536);
 root.SpriteSheets["TitleBg2"] = sheet(30, 3072, 1536);

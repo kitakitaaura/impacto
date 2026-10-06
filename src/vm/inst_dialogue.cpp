@@ -626,8 +626,24 @@ VmInstruction(InstMesMain) {
   DialoguePage& currentPage = DialoguePages[thread->DialoguePageId];
   DialoguePage::State pageState = currentPage.GetState();
 
+  // STEINS;GATE: the phone can be opened while a line waits (flag 1611), and
+  // the phone may finish the line itself (flag 2611), as in Game.exe 0x45f8e0.
+  const bool sghd = Profile::Vm::GameInstructionSet == InstructionSet::SGHD;
+  bool phoneAdvance = false;
+  if (sghd) {
+    SetFlag(1611, true);
+    if (GetFlag(2611)) {
+      SetFlag(2611, false);
+      phoneAdvance = true;
+    }
+  }
+  // Leaving this instruction (line done) closes that window again.
+  const auto lineDone = [&] {
+    if (sghd) SetFlag(1611, false);
+  };
+
   if (pageState == Initial || pageState == Showing) {
-    if (GetFlag(SF_MESALLSKIP)) {
+    if (GetFlag(SF_MESALLSKIP) || phoneAdvance) {
       currentPage.Typewriter.Finish(AnimationDirection::In);
     } else if (GetFlag(SF_MESSKIP)) {
       currentPage.Typewriter.CancelRequested = true;
@@ -648,6 +664,7 @@ VmInstruction(InstMesMain) {
     SaveSystem::SetLineRead(
         static_cast<size_t>(ScrWork[currentPage.Id * 2 + SW_SCRIPTID]),
         static_cast<size_t>(ScrWork[currentPage.Id * 2 + SW_LINEID]));
+    lineDone();
     return;
   }
 
@@ -661,6 +678,7 @@ VmInstruction(InstMesMain) {
     if (currentPage.AdvanceMethod == Skip && type != 1) {
       currentPage.PushBacklogEntry();
 
+      lineDone();
       return;
     }
 
@@ -680,8 +698,9 @@ VmInstruction(InstMesMain) {
   const bool audioPlaying = audioState == Audio::ACS_Playing ||
                             audioState == Audio::ACS_FadingIn ||
                             audioState == Audio::ACS_FadingOut;
-  if (currentPage.AutoWaitTime == 0.0f &&
-      (!audioPlaying || GetFlag(SF_MESSKIP))) {
+  if ((currentPage.AutoWaitTime == 0.0f &&
+       (!audioPlaying || GetFlag(SF_MESSKIP))) ||
+      phoneAdvance) {
     if (Profile::ConfigSystem::SkipVoice) {
       Audio::Channels[Audio::AC_VOICE0]->Stop(0.0f);
     }
@@ -706,6 +725,7 @@ VmInstruction(InstMesMain) {
 
       currentPage.PushBacklogEntry();
 
+      lineDone();
       BlockThread;
       return;
     }
@@ -1287,7 +1307,12 @@ void ChkMesSkip(float dt) {
     AutoModeEnabled = false;
   }
 
-  if ((ScrWork[SW_GAMESTATE] & 0b101) == 0b001 && !GetFlag(SF_UIHIDDEN)) {
+  // STEINS;GATE: buttons belong to the phone while it is open.
+  const bool phoneBusy =
+      Profile::Vm::GameInstructionSet == InstructionSet::SGHD &&
+      GetFlag(2610);
+  if ((ScrWork[SW_GAMESTATE] & 0b101) == 0b001 && !GetFlag(SF_UIHIDDEN) &&
+      !phoneBusy) {
     mesSkip |= Interface::GetControlState(Interface::ControlType::NextMessage);
 
     if (Interface::GetControlState(Interface::ControlType::ForceSkip,

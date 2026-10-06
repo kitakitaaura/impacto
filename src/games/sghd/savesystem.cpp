@@ -1,4 +1,5 @@
 #include "savesystem.h"
+#include "phone.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -27,6 +28,7 @@ namespace Impacto {
 namespace SGHD {
 
 static constexpr uint32_t ResumeMagic = 0x314C5352;  // "RSL1"
+static constexpr size_t ResumeOffset = 0x200;  // in the 0x3EC0 block
 
 using namespace Impacto::Vm;
 using namespace Impacto::Effects;
@@ -746,10 +748,15 @@ void SaveSystem::SaveMemory() {
     if (Profile::Game::UseWaveEffects)
       WaveSave(std::span(WorkingSaveEntry->WaveData));
 
+    // Entry offset 0x3EC0 holds the phone's bit array (contacts, mail state),
+    // the last field the game itself saves.
+    UI::SGHD::Phone::GetSaveBits(WorkingSaveEntry->MapLoadData.data());
+
     // The main thread resumes at the scene's checkpoint (one per scene file),
-    // so also keep the current line to fast-skip back to it on load. Stored
-    // in the otherwise unused CCLCC map block: "RSL1", script id, line id.
-    Io::MemoryStream resume(WorkingSaveEntry->MapLoadData.data(), 12, false);
+    // so also keep the current line to fast-skip back to it on load: "RSL1",
+    // script id, line id, after the phone data in space the game leaves empty.
+    Io::MemoryStream resume(WorkingSaveEntry->MapLoadData.data() + ResumeOffset,
+                            12, false);
     Io::WriteLE<uint32_t>(&resume, ResumeMagic);
     Io::WriteLE<uint32_t>(&resume, (uint32_t)ScrWork[SW_SCRIPTID]);
     Io::WriteLE<uint32_t>(&resume, (uint32_t)ScrWork[SW_LINEID]);
@@ -825,7 +832,18 @@ void SaveSystem::LoadMemoryNew(LoadProcess load) {
       thd->DialoguePageId = WorkingSaveEntry->MainThreadDialoguePageId;
     }
 
-    Io::MemoryStream resume(WorkingSaveEntry->MapLoadData.data(), 12, false);
+    // Saves from before the phone port kept the resume block at offset 0,
+    // where the phone data belongs; treat their phone data as empty.
+    uint8_t* block = WorkingSaveEntry->MapLoadData.data();
+    uint32_t firstWord;
+    std::memcpy(&firstWord, block, sizeof(firstWord));
+    const bool oldLayout = SDL_Swap32LE(firstWord) == ResumeMagic;
+    std::array<uint8_t, UI::SGHD::Phone::SaveBitsSize> phoneBits{};
+    if (!oldLayout) std::copy_n(block, phoneBits.size(), phoneBits.begin());
+    UI::SGHD::Phone::SetSaveBits(phoneBits.data());
+
+    Io::MemoryStream resume(oldLayout ? block : block + ResumeOffset, 12,
+                            false);
     if (Io::ReadLE<uint32_t>(&resume) == ResumeMagic) {
       const uint32_t scriptId = Io::ReadLE<uint32_t>(&resume);
       const uint32_t lineId = Io::ReadLE<uint32_t>(&resume);

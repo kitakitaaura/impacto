@@ -14,8 +14,10 @@ proc = subprocess.Popen([tool], stdin=subprocess.PIPE, stdout=subprocess.PIPE, t
 
 # SCX: "SC3\0", string table offset, return table offset, then label offsets.
 str_off = struct.unpack_from("<I", data, 4)[0]
+# The label table runs until the first label's code (not to the string table).
+label_end = min(str_off, struct.unpack_from("<I", data, 12)[0])
 labels = {}
-for i, off in enumerate(range(12, str_off, 4)):
+for i, off in enumerate(range(12, label_end, 4)):
     labels.setdefault(struct.unpack_from("<I", data, off)[0], i)
 
 def expr(p):

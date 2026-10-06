@@ -196,6 +196,7 @@ set(Impacto_Src
     src/games/rne/titlemenu.cpp
     src/games/sghd/titlemenu.cpp
     src/games/sghd/savesystem.cpp
+    src/games/sghd/phone.cpp
     src/games/sghd/savemenu.cpp
     src/games/sghd/systemmenu.cpp
     src/games/rne/sysmesbox.cpp

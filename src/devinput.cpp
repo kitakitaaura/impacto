@@ -9,6 +9,7 @@
 #include "inputsystem.h"
 #include "log.h"
 #include "vm/interface/input.h"
+#include "mem.h"
 
 namespace Impacto {
 namespace DevInput {
@@ -21,7 +22,8 @@ static uint32_t PadBit(const std::string& name) {
       {"Y", PAD1Y},       {"UP", PAD1UP},       {"DOWN", PAD1DOWN},
       {"LEFT", PAD1LEFT}, {"RIGHT", PAD1RIGHT}, {"START", PAD1START},
       {"SELECT", PAD1SELECT}, {"L1", PAD1L1},   {"R1", PAD1R1},
-      {"L2", PAD1L2},     {"R2", PAD1R2}};
+      {"L2", PAD1L2},     {"R2", PAD1R2},           {"L3", PAD1L3},
+      {"R3", PAD1R3}};
   for (const auto& [n, bit] : names)
     if (name == n) return bit;
   return 0;
@@ -69,6 +71,15 @@ void Apply() {
       const uint32_t bit = PadBit(name);
       held = cmd == "hold" ? held | bit : held & ~bit;
       PADinputButtonIsDown |= held;
+    } else if (cmd == "sw" || cmd == "flag") {
+      // Dump: "sw 6800 6830" / "flag 2600 2620" (inclusive ranges)
+      int from = 0, to = -1;
+      in >> from >> to;
+      if (to < from) to = from;
+      std::string out;
+      for (int i = from; i <= to; i++)
+        out += fmt::format(" {}={}", i, cmd == "sw" ? ScrWork[i] : (int)GetFlag(i));
+      ImpLog(LogLevel::Info, LogChannel::General, "DevInput {}:{}\n", cmd, out);
     } else if (cmd == "move" && (in >> x >> y)) {
       PointerAt(x, y);
     } else if (cmd == "click" && (in >> x >> y)) {

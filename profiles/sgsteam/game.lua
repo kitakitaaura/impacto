@@ -32,6 +32,14 @@ end
 table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1L1], { Id = 50, Mode = KbInputMode.Held });
 table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1X], { Id = 53, Mode = KbInputMode.Tap });
 
+-- Phone trigger: _STARTUP_WIN.SCX opens the phone on PADcustom slot 22, which
+-- the shared table leaves empty. Bind it to L3 (unused), Tab/P and middle click.
+for _, list in ipairs({ root.Input.PADcustomA, root.Input.PADcustomB }) do
+    list[23] = root.PADinput.PAD1L3;  -- Lua is 1-based: slot 22
+end
+root.Input.KBcustom[10] = { KeyboardScanCode._TAB, KeyboardScanCode._P };
+root.Input.PADtoMS[root.PADinput.PAD1L3] = 2;
+
 root.WindowName = "STEINS;GATE";
 
 -- Steam .lay files: little-endian, texture coordinates already in pixels,

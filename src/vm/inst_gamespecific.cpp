@@ -19,6 +19,7 @@
 #include "../data/tipssystem.h"
 #include "../profile/games/chlcc/albummenu.h"
 #include "../profile/games/chlcc/musicmenu.h"
+#include "../games/sghd/phone.h"
 
 namespace Impacto {
 
@@ -686,6 +687,9 @@ VmInstruction(InstMapSystem) {
       break;
   }
 }
+// STEINS;GATE Steam phone: operands and behaviour live with the phone port.
+VmInstruction(InstPhoneSGHD) { UI::SGHD::Phone::Instruction(thread); }
+
 VmInstruction(InstPhoneSG) {
   StartInstruction;
   PopUint8(type);
