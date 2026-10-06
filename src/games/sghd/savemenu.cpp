@@ -5,6 +5,7 @@
 #include "../../renderer/renderer.h"
 #include "../../vm/interface/input.h"
 #include "../../inputsystem.h"
+#include "../../ui/sysmesbox.h"
 #include "../../data/savesystem.h"
 #include "../../mem.h"
 
@@ -77,7 +78,7 @@ void SaveMenu::Update(float dt) {
   if (State == Showing && ScrWork[SW_SYSSUBMENUCT] >= 16) State = Shown;
   if (State == Hiding && ScrWork[SW_SYSSUBMENUCT] <= 0) State = Hidden;
   if (!active) State = ScrWork[SW_SYSSUBMENUCT] > 0 ? Hiding : Hidden;
-  if (State != Shown || ChoiceMade) return;
+  if (State != Shown || ChoiceMade || SysMesBox::AnyVisible()) return;
 
   const int perPage = Columns * Rows;
   const uint32_t pressed = PADinputButtonWentDown;

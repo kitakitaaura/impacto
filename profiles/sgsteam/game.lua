@@ -27,6 +27,10 @@ include(root.BasePaths.RootProfilesDir .. '/sgsteam/dialogue.lua');
 for _, pad in ipairs({ root.PADinput.PAD1START, root.PADinput.PAD1B }) do
     table.insert(root.Input.PADtoKBcustom[pad], { Id = 60, Mode = KbInputMode.Any });
 end
+-- Steam keys: hold Ctrl to skip (fast-forward, L1), F3 toggles Auto (X).
+-- Ctrl counts only while held, so it never flips save pages like L1 taps do.
+table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1L1], { Id = 50, Mode = KbInputMode.Held });
+table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1X], { Id = 53, Mode = KbInputMode.Tap });
 
 root.WindowName = "STEINS;GATE";
 
@@ -59,3 +63,4 @@ include(root.BasePaths.RootProfilesDir .. '/sgsteam/messagedata.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/titlemenu.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/savemenu.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/systemmenu.lua');
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/sysmesboxdisplay.lua');

@@ -24,12 +24,12 @@ void SystemMessageButton::Render() {
         HighlightSprite.ScaledBounds()
             .Scale({Bounds.Width / HighlightSprite.ScaledWidth(), 1.0f},
                    {0.0f, 0.0f})
-            .Translate(Bounds.GetPos());
-    const RectF leftDest =
-        LeftHighlightSprite.ScaledBounds().Translate(LeftHighlightPos);
+            .Translate(Bounds.GetPos() + HighlightDrawOffset);
+    const RectF leftDest = LeftHighlightSprite.ScaledBounds().Translate(
+        LeftHighlightPos + HighlightDrawOffset);
 
-    const RectF rightDest =
-        RightHighlightSprite.ScaledBounds().Translate(RightHighlightPos);
+    const RectF rightDest = RightHighlightSprite.ScaledBounds().Translate(
+        RightHighlightPos + HighlightDrawOffset);
 
     Renderer->DrawSprite(LeftHighlightSprite, leftDest, Tint);
     Renderer->DrawSprite(HighlightSprite, middleDest, Tint);

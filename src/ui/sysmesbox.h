@@ -38,6 +38,8 @@ class SysMesBox : public Menu {
   static SysMesBox* Current(uint32_t id);
   static SysMesBox* Push(uint32_t id);
   static void Pop(uint32_t id);
+  // True while any message box is on screen; menus behind it ignore input.
+  static bool AnyVisible();
 
  protected:
   std::unique_ptr<Widgets::Group> MessageItems;

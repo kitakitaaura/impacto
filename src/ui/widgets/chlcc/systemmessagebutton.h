@@ -20,6 +20,9 @@ class SystemMessageButton : public Button {
   void SetText(std::vector<ProcessedTextGlyph> text, float textWidth,
                float fontSize, RendererOutlineMode outlineMode) override;
 
+  // Moves only the drawn highlight (e.g. an underline below the text).
+  glm::vec2 HighlightDrawOffset{0.0f, 0.0f};
+
  protected:
   Sprite LeftHighlightSprite;
   Sprite RightHighlightSprite;

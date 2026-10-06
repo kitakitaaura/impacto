@@ -5,6 +5,7 @@
 #include "../../renderer/renderer.h"
 #include "../../vm/interface/input.h"
 #include "../../inputsystem.h"
+#include "../../ui/sysmesbox.h"
 #include "../../mem.h"
 
 namespace Impacto {
@@ -29,7 +30,7 @@ RectF SystemMenu::ItemRect(int i) const {
 void SystemMenu::Update(float dt) {
   const int ct = ScrWork[SW_SYSMENUCT];
   State = ct <= 0 ? Hidden : ct >= 32 ? Shown : Showing;
-  if (State != Shown || ChoiceMade) return;
+  if (State != Shown || ChoiceMade || SysMesBox::AnyVisible()) return;
 
   const int count = (int)ItemSprites.size();
   if (PADinputButtonWentDown & PAD1DOWN) Cursor = (Cursor + 1) % count;

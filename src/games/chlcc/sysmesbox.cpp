@@ -83,6 +83,10 @@ void SysMesBox::Show() {
                     Profile::Dialogue::DefaultFontSize,
                     RendererOutlineMode::Full);
     choice->OnClickHandler = onClick;
+    if (Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD) {
+      static_cast<SystemMessageButton*>(choice)->HighlightDrawOffset = {
+          HighlightXOffset, HighlightYOffset};
+    }
 
     ChoiceItems->Add(choice, FDIR_LEFT);
 

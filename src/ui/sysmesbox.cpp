@@ -16,6 +16,13 @@ SysMesBox* SysMesBox::Current(uint32_t id) {
   return it == MsgBoxes.end() ? nullptr : it->second.get();
 }
 
+bool SysMesBox::AnyVisible() {
+  for (const auto& [id, box] : MsgBoxes) {
+    if (box && box->State != Hidden) return true;
+  }
+  return false;
+}
+
 SysMesBox* SysMesBox::Push(uint32_t id) {
   auto it = MsgBoxes.find(id);
   if (it != MsgBoxes.end()) {

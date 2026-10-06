@@ -8,6 +8,7 @@
 #include "../../mem.h"
 #include "../../log.h"
 #include "../../inputsystem.h"
+#include "../../ui/sysmesbox.h"
 
 #include <SDL3/SDL_stdinc.h>
 
@@ -82,7 +83,9 @@ void TitleMenu::ScriptTick(int mode) {
     CurStage = Stage::PressStart;
     return;
   }
-  if (mode != 1 || State != Shown || GetFlag(SF_TITLEEND)) return;
+  if (mode != 1 || State != Shown || GetFlag(SF_TITLEEND) ||
+      SysMesBox::AnyVisible())
+    return;
 
   const int mainCount = (int)MainItems.size();
   switch (CurStage) {
