@@ -197,6 +197,8 @@ struct YUVFrameUniforms {
   GLint Cb = 0;
   GLint Cr = 0;
   bool IsAlpha = false;
+  GLint AlphaPlane = 0;
+  bool HasAlphaPlane = false;
 };
 
 class YUVFrameShader : public Shader<YUVFrameUniforms> {
@@ -212,6 +214,8 @@ class YUVFrameShader : public Shader<YUVFrameUniforms> {
   const GLint CbLocation;
   const GLint CrLocation;
   const GLint IsAlphaLocation;
+  const GLint AlphaPlaneLocation;
+  const GLint HasAlphaPlaneLocation;
 };
 
 struct MaskedSpriteNoAlphaUniforms {

@@ -788,6 +788,11 @@ void SaveSystem::LoadMemoryNew(LoadProcess load) {
                       FlagWork.begin() + 300);
     std::ranges::copy(WorkingSaveEntry->ScrWorkScript1, ScrWork.begin() + 1000);
     std::ranges::copy(WorkingSaveEntry->ScrWorkScript2, ScrWork.begin() + 4300);
+    // Saves from before the movie channels were initialised hold movie 0
+    // for channel 1, which the load script would replay. Channel 1 movies
+    // always have a play mode of 20 or more (channel = mode / 20).
+    if (ScrWork[SW_MOVIE_PLAYMODE + 20] < 20)
+      ScrWork[SW_MOVIE_PLAYNO + 20] = 0xFFFF;
 
     if (Profile::Game::UseWaveEffects)
       WaveLoad(std::span(WorkingSaveEntry->WaveData));

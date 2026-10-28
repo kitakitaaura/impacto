@@ -563,6 +563,7 @@ struct TryGetImpl<Io::FolderArchiveParameters> {
     Io::FolderArchiveParameters result;
     result.OrderFilePath = TryGetMember<std::string>("Order");
     result.WhitelistPattern = TryGetMember<std::string>("Whitelist");
+    result.Names = TryGetMember<std::vector<std::string>>("Names");
     return result;
   }
 };

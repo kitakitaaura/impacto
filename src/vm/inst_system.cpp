@@ -1056,6 +1056,12 @@ VmInstruction(InstMSinit) {
     for (int i = 4300; i < 7300; i++) {
       if (i < 4340 || i > 4347) ScrWork[i] = 0;
     }
+    // Both movie channels start empty (0xFFFF), or loading a save "recovers"
+    // movie 0 (ar.bk2) on channel 1 (_STARTUP_WIN.SCX 0x3d8e).
+    for (int channel = 0; channel < 2; channel++) {
+      ScrWork[SW_MOVIE_PLAYNO + 20 * channel] = 0xFFFF;
+      ScrWork[SW_MOVIE_LOADNO + 20 * channel] = 0xFFFF;
+    }
     UI::SGHD::Phone::Reset();
   }
 

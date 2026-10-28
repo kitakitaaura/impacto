@@ -98,6 +98,32 @@ IoError FSFolderArchive::SortTOCByOrderFile(FSFolderArchive* result,
   return IoError_OK;
 }
 
+void FSFolderArchive::AssignIdsByName(FSFolderArchive* result,
+                                      std::vector<std::string> const& names) {
+  const auto lower = [](std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+  };
+  std::unordered_map<std::string, uint32_t> idsByName;
+  for (uint32_t id = 0; id < names.size(); id++)
+    idsByName.emplace(lower(names[id]), id);
+
+  std::vector<TextMetaEntry> toc;
+  for (auto& entry : result->TOC) {
+    const auto found = idsByName.find(
+        lower(std::filesystem::path(entry.FileName).stem().string()));
+    if (found == idsByName.end()) continue;
+    entry.Id = found->second;
+    toc.push_back(entry);
+  }
+  result->TOC = std::move(toc);
+  for (auto& entry : result->TOC) {
+    result->IdsToFiles[entry.Id] = &entry;
+    result->NamesToIds[entry.FileName] = entry.Id;
+  }
+}
+
 IoError FSFolderArchive::Create(Stream* stream, VfsArchive** outArchive,
                                 std::optional<FolderArchiveParameters> params) {
   namespace fs = std::filesystem;
@@ -159,6 +185,13 @@ IoError FSFolderArchive::Create(Stream* stream, VfsArchive** outArchive,
   if (auto code = iterateDirectory(iterateDirectory, stream->Meta.FileName);
       code != IoError_OK) {
     return code;
+  }
+
+  if (params && params->Names) {
+    AssignIdsByName(result, *params->Names);
+    result->IsInit = true;
+    *outArchive = result;
+    return IoError_OK;
   }
 
   if (params && params->OrderFilePath) {

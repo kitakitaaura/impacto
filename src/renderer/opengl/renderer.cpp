@@ -1158,11 +1158,20 @@ void Renderer::DrawVideoTexture(const YUVFrame& frame, const RectF& dest,
   }
   EnsureTopologyMode(TopologyMode::Triangles);
 
-  UseTextures(std::array<std::pair<uint32_t, size_t>, 3>{
-      std::pair{frame.LumaId, 0},
-      std::pair{frame.CbId, 1},
-      std::pair{frame.CrId, 2},
-  });
+  if (frame.HasAlphaPlane) {
+    UseTextures(std::array<std::pair<uint32_t, size_t>, 4>{
+        std::pair{frame.LumaId, 0},
+        std::pair{frame.CbId, 1},
+        std::pair{frame.CrId, 2},
+        std::pair{frame.AlphaId, 3},
+    });
+  } else {
+    UseTextures(std::array<std::pair<uint32_t, size_t>, 3>{
+        std::pair{frame.LumaId, 0},
+        std::pair{frame.CbId, 1},
+        std::pair{frame.CrId, 2},
+    });
+  }
 
   YUVFrameUniforms uniforms{
       .Projection = Projection,
@@ -1170,6 +1179,8 @@ void Renderer::DrawVideoTexture(const YUVFrame& frame, const RectF& dest,
       .Cb = 1,
       .Cr = 2,
       .IsAlpha = alphaVideo,
+      .AlphaPlane = 3,
+      .HasAlphaPlane = frame.HasAlphaPlane,
   };
 
   UseShader(*YUVFrameShaderProgram, uniforms);

@@ -34,12 +34,31 @@ void GLYUVFrame::Submit(const void* luma, const void* cb, const void* cr) {
   glGenerateMipmap(GL_TEXTURE_2D);
 }
 
+void GLYUVFrame::EnableAlphaPlane() {
+  if (HasAlphaPlane) return;
+  GLuint alpha;
+  glGenTextures(1, &alpha);
+  AlphaId = alpha;
+  HasAlphaPlane = true;
+}
+
+void GLYUVFrame::SubmitAlpha(const void* alpha) {
+  glBindTexture(GL_TEXTURE_2D, AlphaId);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, (GLsizei)Width, (GLsizei)Height, 0,
+               GL_RED, GL_UNSIGNED_BYTE, alpha);
+  glGenerateMipmap(GL_TEXTURE_2D);
+}
+
 void GLYUVFrame::Release() {
   GLuint yuv[3];
   yuv[0] = LumaId;
   yuv[1] = CbId;
   yuv[2] = CrId;
   glDeleteTextures(3, yuv);
+  if (HasAlphaPlane) {
+    GLuint alpha = AlphaId;
+    glDeleteTextures(1, &alpha);
+  }
 }
 
 }  // namespace OpenGL

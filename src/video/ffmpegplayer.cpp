@@ -782,10 +782,14 @@ void FFmpegPlayer::Update(float dt) {
               videoText->Release();
             }
 
-            if (frame->Frame.pixelFormat() == AV_PIX_FMT_YUV420P) {
-              VideoTexture = Renderer->CreateYUVFrame(
+            if (frame->Frame.pixelFormat() == AV_PIX_FMT_YUV420P ||
+                frame->Frame.pixelFormat() == AV_PIX_FMT_YUVA420P) {
+              YUVFrame* yuv = Renderer->CreateYUVFrame(
                   (float)VideoStream->CodecContext.width(),
                   (float)VideoStream->CodecContext.height());
+              if (frame->Frame.pixelFormat() == AV_PIX_FMT_YUVA420P)
+                yuv->EnableAlphaPlane();
+              VideoTexture = yuv;
             } else if (frame->Frame.pixelFormat() == AV_PIX_FMT_NV12) {
               VideoTexture = Renderer->CreateNV12Frame(
                   (float)VideoStream->CodecContext.width(),
@@ -799,10 +803,12 @@ void FFmpegPlayer::Update(float dt) {
       auto& nv12Frame = std::get<NV12Frame*>(VideoTexture);
       nv12Frame->Submit(frame->Frame.data(0), frame->Frame.raw()->linesize[0],
                         frame->Frame.data(1), frame->Frame.raw()->linesize[1]);
-    } else if (frame->Frame.pixelFormat() == AV_PIX_FMT_YUV420P) {
+    } else if (frame->Frame.pixelFormat() == AV_PIX_FMT_YUV420P ||
+               frame->Frame.pixelFormat() == AV_PIX_FMT_YUVA420P) {
       auto& yuvFrame = std::get<YUVFrame*>(VideoTexture);
       yuvFrame->Submit(frame->Frame.data(0), frame->Frame.data(1),
                        frame->Frame.data(2));
+      if (yuvFrame->HasAlphaPlane) yuvFrame->SubmitAlpha(frame->Frame.data(3));
     } else {
       ImpLog(LogLevel::Warning, LogChannel::Video,
              "Unsupported frame pixel format, video will not display!\n");

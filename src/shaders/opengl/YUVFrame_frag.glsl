@@ -7,6 +7,8 @@ uniform sampler2D Luma;
 uniform sampler2D Cb;
 uniform sampler2D Cr;
 uniform bool IsAlpha;
+uniform sampler2D AlphaPlane;
+uniform bool HasAlphaPlane;
 
 const mat4 yuv_to_rgb_rec601 = mat4(
     1.16438,  0.00000,  1.59603, -0.87079,
@@ -24,7 +26,12 @@ vec4 getRGBA(vec2 texUv) {
 }
 
 void main() {
-    if (IsAlpha) {
+    if (HasAlphaPlane) {
+        // YUVA420P: a real alpha plane next to Y, Cb and Cr.
+        color = getRGBA(uv);
+        color.a = texture(AlphaPlane, uv).r;
+    } else if (IsAlpha) {
+        // Alpha stored as a second picture below the colour one.
         color = getRGBA(vec2(uv.x, uv.y / 2.0));
         color.a = getRGBA(vec2(uv.x, uv.y / 2.0 + 0.5)).r;
     } else {

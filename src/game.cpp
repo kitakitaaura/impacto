@@ -457,6 +457,14 @@ void Update(float dt) {
   }
 }
 
+// Steam STEINS;GATE: movie priority 3000+ (the title screen's title.bk2
+// uses 4000) draws over everything, menus included; lower priorities draw
+// with the scene.
+static bool SghdMovieOnTop() {
+  return Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD &&
+         ScrWork[SW_MOVIEPRI] >= 3000;
+}
+
 static void RenderMain() {
   Background2D::LastRenderedBackground = nullptr;
   UI::GameSpecific::RenderEarlyMain();
@@ -631,6 +639,7 @@ static void RenderMain() {
   // MO8 uses those huge layer indexes for movie menu, it doesn't
   // actually have 4000 layers
   if ((+Profile::Game::GameFeatures & +GameFeature::Video) &&
+      !SghdMovieOnTop() &&
       (!Profile::Game::UseMoviePriority ||
        (Profile::Vm::GameInstructionSet == Vm::InstructionSet::MO8 &&
         (ScrWork[SW_MOVIEPRI] == 3000 || ScrWork[SW_MOVIEPRI] == 4000)))) {
@@ -764,6 +773,10 @@ void Render() {
       for (auto const& menu : UI::Menus[DrawComponents[i]]) {
         menu->Render();
       }
+    }
+    if ((+Profile::Game::GameFeatures & +GameFeature::Video) &&
+        SghdMovieOnTop()) {
+      Video::VideoRender(ScrWork[SW_MOVIEALPHA] / 256.0f);
     }
     if (+Profile::Game::GameFeatures & +GameFeature::Achievements) {
       AchievementNotification::Render();

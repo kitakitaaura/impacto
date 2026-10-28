@@ -12,6 +12,7 @@
 #include "../profile/vm.h"
 #include "../profile/game.h"
 #include "../video/videosystem.h"
+#include "../data/savesystem.h"
 #include "interface/input.h"
 
 namespace Impacto {
@@ -36,6 +37,11 @@ VmInstruction(InstPlayMovie) {
 
   PopExpression(playNo);
   PopExpression(movCancelFlag);
+
+  // A load fast-forwarding from the scene's checkpoint to the saved line
+  // doesn't replay the scene's movies (input is blocked meanwhile, so they
+  // couldn't be skipped). Same path as a missing movie: the script goes on.
+  if (SaveSystem::ResumeLine) return;
 
   if (+Profile::Game::GameFeatures & +GameFeature::Video) {
     Io::Stream* stream;
@@ -114,6 +120,11 @@ static void PlayMovieOldCommon(Sc3VmThread* thread, uint8_t instType) {
 
   PopExpression(playNo);
   PopExpression(movCancelFlag);
+
+  // A load fast-forwarding from the scene's checkpoint to the saved line
+  // doesn't replay the scene's movies (input is blocked meanwhile, so they
+  // couldn't be skipped). Same path as a missing movie: the script goes on.
+  if (SaveSystem::ResumeLine) return;
 
   if (+Profile::Game::GameFeatures & +GameFeature::Video) {
     Io::Stream* stream;

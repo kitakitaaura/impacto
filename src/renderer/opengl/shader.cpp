@@ -282,12 +282,16 @@ YUVFrameShader::YUVFrameShader(GLint programId)
       LumaLocation(glGetUniformLocation(programId, "Luma")),
       CbLocation(glGetUniformLocation(programId, "Cb")),
       CrLocation(glGetUniformLocation(programId, "Cr")),
-      IsAlphaLocation(glGetUniformLocation(programId, "IsAlpha")) {
+      IsAlphaLocation(glGetUniformLocation(programId, "IsAlpha")),
+      AlphaPlaneLocation(glGetUniformLocation(programId, "AlphaPlane")),
+      HasAlphaPlaneLocation(glGetUniformLocation(programId, "HasAlphaPlane")) {
   UploadVar(Uniforms.Projection, ProjectionLocation);
   UploadVar(Uniforms.Luma, LumaLocation);
   UploadVar(Uniforms.Cb, CbLocation);
   UploadVar(Uniforms.Cr, CrLocation);
   UploadVar(Uniforms.IsAlpha, IsAlphaLocation);
+  UploadVar(Uniforms.AlphaPlane, AlphaPlaneLocation);
+  UploadVar(Uniforms.HasAlphaPlane, HasAlphaPlaneLocation);
 }
 
 void YUVFrameShader::UploadUniforms(YUVFrameUniforms newUniforms) {
@@ -297,6 +301,9 @@ void YUVFrameShader::UploadUniforms(YUVFrameUniforms newUniforms) {
   UpdateVar(newUniforms.Cb, Uniforms.Cb, CbLocation);
   UpdateVar(newUniforms.Cr, Uniforms.Cr, CrLocation);
   UpdateVar(newUniforms.IsAlpha, Uniforms.IsAlpha, IsAlphaLocation);
+  UpdateVar(newUniforms.AlphaPlane, Uniforms.AlphaPlane, AlphaPlaneLocation);
+  UpdateVar(newUniforms.HasAlphaPlane, Uniforms.HasAlphaPlane,
+            HasAlphaPlaneLocation);
 }
 
 MaskedSpriteNoAlphaShader::MaskedSpriteNoAlphaShader(GLint programId)
