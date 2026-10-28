@@ -2,6 +2,7 @@
 // The user's folder becomes Module.noberuFiles: path -> File, read on demand by
 // src/io/webfilestream.cpp. /saves is IndexedDB-backed.
 (() => {
+  const DEV_FILE = '/tmp/devinput.txt';
   const status = document.getElementById('status');
   const say = (text) => { status.textContent = text; };
 
@@ -29,6 +30,8 @@
       preRun: [(m) => {
         // ?mute=1: start silent (handy while testing).
         if (new URLSearchParams(location.search).has('mute')) m.ENV.IMPACTO_MUTE = '1';
+        // ?dev=1: DevInput through an in-memory file, see impactoDev below.
+        if (new URLSearchParams(location.search).has('dev')) m.ENV.IMPACTO_DEV_INPUT = DEV_FILE;
         m.FS.mkdir('/saves');
         m.FS.mount(m.IDBFS, {}, '/saves');
       }],
@@ -38,6 +41,20 @@
       }),
     };
     const module = await createImpacto(config);
+    // impactoDev('state') -> the reply line (src/devinput.h lists commands).
+    window.impactoDev = async (cmd, prefix = 'Dev', timeoutMs = 5000) => {
+      const { FS } = module;
+      const read = (path) => { try { return FS.readFile(path, { encoding: 'utf8' }); } catch { return ''; } };
+      const seen = read(DEV_FILE + '.out').length;
+      FS.writeFile(DEV_FILE, read(DEV_FILE) + cmd + '\n');
+      for (const end = Date.now() + timeoutMs; Date.now() < end;) {
+        await new Promise((r) => setTimeout(r, 30));
+        const line = read(DEV_FILE + '.out').slice(seen).split('\n')
+          .find((l) => l.startsWith(prefix));
+        if (line) return line;
+      }
+      return null;
+    };
     // Restore saves before main() so the engine sees them at boot.
     await new Promise((resolve) => module.FS.syncfs(true, (err) => {
       if (err) console.warn('save restore failed', err);
