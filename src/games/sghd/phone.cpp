@@ -1967,7 +1967,7 @@ static std::vector<PhoneLine> WrapText(uint32_t strNum, float width, float size,
         link = -1;
         break;
       case STT_Character: {
-        const uint16_t id = token.Val_Uint16;
+        const uint16_t id = token.Val_Int;
         const float adv = font.GetAdvanceWidth(id) * size / font.BitmapEmWidth;
         if (id == 0 || id == 63) {
           words.emplace_back();
