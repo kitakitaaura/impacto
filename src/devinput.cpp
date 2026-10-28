@@ -25,6 +25,8 @@
 #include "ui/backlogmenu.h"
 #include "ui/sysmesbox.h"
 #include "ui/ui.h"
+#include "io/vfs.h"
+#include "video/videosystem.h"
 #include "vm/vm.h"
 
 #include <SDL3/SDL_events.h>
@@ -147,6 +149,7 @@ static void ReplyState() {
       "sysmesbox={} "
       "phoneopen={} phonect={} phonemode={} glyphs={} rows={} opaque={} "
       "mastervol={} "
+      "movie0={} movie1={} movieno={} "
       "name=\"{}\" text=\"{}\" wrapped=\"{}\"",
       Frame, ScrWork[SW_GAMESTATE], (int)GetFlag(SF_TITLEMODE),
       ScrWork[SW_SCRIPTID], ScrWork[SW_LINEID], (int)GetFlag(SF_MESSKIP),
@@ -163,7 +166,10 @@ static void ReplyState() {
       sghd ? ScrWork[6801] : -1, sghd ? ScrWork[6802] : -1,
       page ? page->Glyphs.size() : 0, page ? TextRows(page->Glyphs) : 0,
       page ? (int)page->TextIsFullyOpaque() : 0,
-      (int)(Audio::MasterVolume * 100), page ? GlyphText(page->Name) : "",
+      (int)(Audio::MasterVolume * 100),
+      Video::Players[0] ? (int)Video::Players[0]->IsPlaying : -1,
+      Video::Players[1] ? (int)Video::Players[1]->IsPlaying : -1,
+      ScrWork[SW_MOVIE_PLAYNO], page ? GlyphText(page->Name) : "",
       page ? GlyphText(page->Glyphs) : "",
       page ? GlyphText(page->Glyphs, true) : ""));
 }
@@ -340,6 +346,20 @@ void Apply() {
       PointerAt(x, y);
       PADinputMouseWentDown |= PAD1B;
       PADinputMouseIsDown |= PAD1B;
+    } else if (cmd == "playmovie") {
+      // Plays movie ID (the "movie" mount) on channel 0, like PlayMovie.
+      int id = 0;
+      in >> id;
+      Io::Stream* stream = nullptr;
+      if (Io::VfsOpen("movie", (uint32_t)id, &stream) == IoError_OK) {
+        if (Video::Players[0]->IsPlaying) Video::Players[0]->Stop();
+        Video::Players[0]->Play(stream, false, false);
+        Reply(fmt::format("DevMovie {} opened", id));
+      } else {
+        Reply(fmt::format("DevMovie {} missing", id));
+      }
+    } else if (cmd == "stopmovie") {
+      Video::Players[0]->Stop();
     } else if (cmd == "state") {
       ReplyState();
     } else if (cmd == "key" || cmd == "keydown" || cmd == "keyup") {

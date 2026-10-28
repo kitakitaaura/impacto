@@ -22,7 +22,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from harness import Game  # noqa: E402
 from test_sgsteam import (GameTest, MENU_SAVE, MENU_SHOWN, load_from_title,  # noqa: E402
-                          menu_select, new_game, next_line, skip_until, tap)
+                          menu_select, movie_playing, new_game, next_line,
+                          skip_until, tap)
 
 # Phone screens (SW 6802), from src/games/sghd/phone.cpp.
 HOME, INBOX, VIEW, CONTACTS, CALL_POPUP = 0, 3, 5, 6, 7
@@ -102,6 +103,12 @@ def skip_to_wait(g, limit=240):
                    s["sysmesbox"])
             still = still + 1 if key == last else 0
             last = key
+            # Fast-forward stops at movies the story waits on; background
+            # movies play on while lines advance.
+            if still >= 2 and movie_playing(s):
+                g.send("key Return")
+                still = 0
+                continue
             if still >= 3:
                 return s
     finally:

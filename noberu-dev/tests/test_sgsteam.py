@@ -16,7 +16,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from harness import Game, image_stats, save_png  # noqa: E402
+from harness import Game, image_stats, read_ppm, save_png  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
@@ -57,10 +57,24 @@ def to_title(g):
                       what="title menu")
 
 
+def movie_playing(state):
+    return state["movie0"] == 1 or state["movie1"] == 1
+
+
+def skip_movie(g, timeout=20):
+    """Taps Return until no movie plays (only while one does)."""
+    g.press_until("Return", lambda s: not movie_playing(s), timeout,
+                  what="movie skipped")
+
+
 def new_game(g):
     to_title(g)
     g.press_until("Return", lambda s: s["gamestate"] == 1, 30,
                   what="game start")
+    # A new game opens with the prologue movie (prologue01).
+    g.wait_for(lambda s: movie_playing(s) or s["glyphs"] > 0, 30,
+               what="prologue movie or first line")
+    skip_movie(g)
     return g.wait_for(lambda s: s["glyphs"] > 0 and s["opaque"], 60,
                       what="first line")
 
@@ -130,9 +144,29 @@ def menu_select(g, row):
 
 
 def skip_until(g, predicate, timeout=120, what="skip target"):
+    """Holds Ctrl until predicate(state); fast-forward stops at movies, so
+    those are cancelled with Return (unless the predicate wants one)."""
     g.send("keydown Left_Ctrl")
     try:
-        return g.wait_for(predicate, timeout, interval=0.3, what=what)
+        end = time.time() + timeout
+        state, place, since = None, None, time.time()
+        while time.time() < end:
+            try:
+                state = g.state()
+            except TimeoutError:
+                continue
+            if predicate(state):
+                return state
+            if (state["script"], state["line"]) != place:
+                place, since = (state["script"], state["line"]), time.time()
+            # Only a movie the story waits on (lines stopped) is cancelled;
+            # background movies play on while lines advance.
+            if movie_playing(state) and time.time() - since > 1.0:
+                g.send("key Return")
+                since = time.time()
+            time.sleep(0.3)
+        raise TimeoutError("timed out waiting for %s; last state: %s" %
+                           (what, state))
     finally:
         g.send("keyup Left_Ctrl")
         g.frames(5)
@@ -158,8 +192,8 @@ class GameTest(unittest.TestCase):
                 pass
         g.stop()
 
-    def assertNoNewErrors(self, g):
-        errors = g.log_errors(ignore=KNOWN_ERRORS)
+    def assertNoNewErrors(self, g, also_ignore=()):
+        errors = g.log_errors(ignore=KNOWN_ERRORS + list(also_ignore))
         self.assertEqual(errors, [], "unexpected errors in impacto.log")
 
     def assertNotBlank(self, path):
@@ -368,6 +402,87 @@ class SaveLoad(GameTest):
             lambda s: s["line"] == saved["line"] and s["sysmenu"] ==
             MENU_HIDDEN and s["opaque"], 60, what="quick load")
         self.assertEqual(state["text"], saved["text"])
+
+
+class Movies(GameTest):
+    # Movie ids index Game.exe's name table (profiles/sgsteam/vfs.lua).
+    TITLE, PROLOGUE01, OPENING, MISSING = 37, 34, 32, 29
+
+    def test_title_movie_plays_over_title_art(self):
+        # title.bk2 is a Bink 2 clip with an alpha plane (YUVA420P), drawn
+        # above the title menu (movie priority 4000).
+        g = self.start()
+        g.wait_for(lambda s: s["movie0"] and s["movieno"] == self.TITLE, 60,
+                   what="title movie")
+        to_title(g)
+        first = read_ppm(g.shot())
+        time.sleep(1.0)
+        second = read_ppm(g.shot())
+        width, height = first[0], first[1]
+
+        def region(img, x0, y0, x1, y1):
+            data, w = img[2], img[0]
+            return bytes(data[(y * w + x) * 3 + c]
+                         for y in range(y0, y1, 8) for x in range(x0, x1, 8)
+                         for c in range(3))
+        # The satellite moves in the top left...
+        top_left = (0, 0, width // 2, height // 2)
+        self.assertNotEqual(region(first, *top_left),
+                            region(second, *top_left), "title movie frozen")
+        # ...while the logo at the bottom right stays visible under the
+        # transparent parts of the movie.
+        logo = (width // 2, height * 3 // 4, width, height)
+        self.assertEqual(region(first, *logo), region(second, *logo))
+        brightness, colours = image_stats(g.shot())
+        self.assertGreater(colours, 30)
+        self.assertNoNewErrors(g)
+
+    def test_prologue_movie_plays_then_skips_to_first_line(self):
+        g = self.start()
+        to_title(g)
+        g.press_until("Return", lambda s: s["gamestate"] == 1, 30)
+        g.wait_for(lambda s: s["movie0"] and s["movieno"] == self.PROLOGUE01,
+                   30, what="prologue01")
+        frame = g.sw(6343)[6343]  # current movie frame
+        time.sleep(1.5)
+        self.assertGreater(g.sw(6343)[6343], frame, "movie not advancing")
+        skip_movie(g)
+        state = g.wait_for(lambda s: s["glyphs"] > 0 and s["opaque"], 30)
+        self.assertEqual((state["script"], state["line"]), (12, 0))
+        self.assertNoNewErrors(g)
+
+    def test_opening_movie_plays_and_skips(self):
+        g = self.start()
+        new_game(g)
+        skip_until(g, lambda s: s["movie0"] and s["movieno"] == self.OPENING,
+                   120, "the opening")
+        # It opens on black; by frame 150 it shows Akihabara.
+        g.wait_for(lambda s: g.sw(6343)[6343] >= 150, 20, what="frame 150")
+        self.assertNotBlank(g.shot())
+        skip_movie(g)
+        # The opening sits between the prologue (12) and chapter 1 (13).
+        state = g.wait_for(lambda s: s["glyphs"] > 0 and s["opaque"] and
+                           not movie_playing(s), 30)
+        self.assertIn(state["script"], (12, 13))
+        self.assertNoNewErrors(g)
+
+    def test_every_movie_id_opens_and_plays(self):
+        g = self.start()
+        to_title(g)
+        for movie in range(38):
+            reply = g.request("playmovie %d" % movie, "DevMovie")
+            if movie == self.MISSING:  # listed by the exe, not shipped
+                self.assertTrue(reply.endswith("missing"), reply)
+                continue
+            self.assertTrue(reply.endswith("opened"), reply)
+            g.wait_for(lambda s: s["movie0"] == 1, 10,
+                       what="movie %d playing" % movie)
+            g.send("stopmovie")
+            g.wait_for(lambda s: s["movie0"] == 0, 10)
+        # imv004 (id 9) has one frame the Bink 2 decoder rejects (frame 9 of
+        # 120, in both resolutions); it shows the previous frame there.
+        self.assertNoNewErrors(g, also_ignore=[
+            r"\[Video\] Failed to decode Invalid data found"])
 
 
 @unittest.skipUnless(os.environ.get("NOBERU_LONG"), "set NOBERU_LONG=1")

@@ -20,6 +20,8 @@ namespace DevInput {
 //   mouse X Y / mclick X Y / mrclick X Y / mmclick X Y  (SDL mouse events
 //                               at design coordinates: move, left/right/middle)
 //   wheel DY      (SDL wheel event; positive scrolls up)
+//   playmovie ID / stopmovie  (movie mount id on video channel 0; replies
+//                               DevMovie ID opened|missing)
 //   state         (reply one DevState line: script/line, menus, text...)
 //   shot PATH     (write this frame as a binary PPM, reply DevShot PATH)
 //   echo TEXT     (reply DevEcho TEXT; marks a point in the reply stream)
