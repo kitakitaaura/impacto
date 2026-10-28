@@ -65,6 +65,43 @@ def new_game(g):
                       what="first line")
 
 
+def steer(g, field, target, what):
+    """Taps Up/Down until state[field] == target."""
+    for _ in range(12):
+        state = g.state()
+        if state[field] == target:
+            return state
+        tap(g, "Down" if state[field] < target else "Up")
+    raise AssertionError("%s stuck at %d" % (what, g.state()[field]))
+
+
+TITLE_MAIN, TITLE_SUB = 1, 2
+TITLE_ITEM_LOAD, TITLE_SUB_LOAD = 1, 1  # LOAD -> (Quick Load, Load)
+
+
+def load_from_title(g, slot_keys=(), wait_resume=True):
+    """Title -> LOAD -> Load -> slot 01 (after `slot_keys`) -> confirm."""
+    to_title(g)
+    g.press_until("Return", lambda s: s["titlestage"] == TITLE_MAIN, 20,
+                  what="leave Press Enter")
+    steer(g, "titlecur", TITLE_ITEM_LOAD, "title cursor")
+    g.press_until("Return", lambda s: s["titlestage"] == TITLE_SUB, 10,
+                  what="LOAD submenu")
+    steer(g, "titlesub", TITLE_SUB_LOAD, "title sub cursor")
+    g.press_until("Return", lambda s: s["savemenu"] == MENU_SHOWN, 15,
+                  what="load menu")
+    for key in slot_keys:
+        tap(g, key)
+    g.press_until("Return", lambda s: s["savemenu"] != MENU_SHOWN or
+                  s["sysmesbox"], 10, what="pick slot")
+    if g.state()["sysmesbox"]:
+        tap(g, "Return")  # confirm load
+    # The load fast-forwards from the scene's checkpoint to the saved line.
+    if wait_resume:
+        g.wait_for(lambda s: s["gamestate"] == 1 and not s["resuming"] and
+                   s["savemenu"] == 0, 60, what="resume to the saved line")
+
+
 def next_line(g):
     """Advances one line (the first press may only finish the typewriter)."""
     start = g.state()
@@ -300,19 +337,7 @@ class SaveLoad(GameTest):
 
         g = self.start(keep_saves=True)
         to_title(g)
-        # LOAD -> Load (second sub item) -> slot 01.
-        tap(g, "Return")  # leave "Press Enter"
-        g.frames(30)
-        tap(g, "Down")
-        tap(g, "Return")
-        g.frames(20)
-        tap(g, "Down")
-        tap(g, "Return")
-        g.wait_for(lambda s: s["savemenu"] == MENU_SHOWN, 15, what="load menu")
-        g.press_until("Return", lambda s: s["savemenu"] != MENU_SHOWN or
-                      s["sysmesbox"], 10, what="pick slot 01")
-        if g.state()["sysmesbox"]:
-            tap(g, "Return")  # confirm load
+        load_from_title(g)
         state = g.wait_for(
             lambda s: s["gamestate"] == 1 and s["line"] == saved["line"] and
             s["opaque"], 60, what="resume at line %d" % saved["line"])

@@ -12,7 +12,9 @@
 #include "vm/interface/input.h"
 #include "mem.h"
 #include "audio/audiosystem.h"
+#include "data/savesystem.h"
 #include "games/sghd/phone.h"
+#include "games/sghd/titlemenu.h"
 #include "profile/charset.h"
 #include "profile/scriptvars.h"
 #include "profile/vm.h"
@@ -77,19 +79,32 @@ static uint32_t SghdGlyphChar(uint32_t id) {
     case 66: return '-';
     case 201: return '\'';
     case 202: return 0x201C;  // left double quote
+    case 204: return '(';
+    case 414: return 0xA3;  // pound sign
+    case 415: return '%';
+    case 416: return '#';
+    case 417: return '&';
+    case 418: return '*';
+    case 205: return ')';
     case 203: return 0x201D;  // right double quote
   }
   return 0;
 }
 
-static std::string GlyphText(const std::vector<ProcessedTextGlyph>& glyphs) {
+static std::string GlyphText(const std::vector<ProcessedTextGlyph>& glyphs,
+                             bool markRows = false) {
   static ankerl::unordered_dense::map<uint16_t, uint32_t> sc3ToChar;
   if (sc3ToChar.empty()) {
     for (const auto& [ch, sc3] : Profile::Charset::CharacterToSc3)
       sc3ToChar.emplace(sc3 & 0x7FFF, ch);
   }
   std::string text;
+  float rowY = glyphs.empty() ? 0.0f : glyphs.front().DestRect.Y;
   for (const ProcessedTextGlyph& glyph : glyphs) {
+    if (markRows && glyph.DestRect.Y != rowY) {
+      text += '/';
+      rowY = glyph.DestRect.Y;
+    }
     const auto found = sc3ToChar.find((uint16_t)glyph.CharId);
     uint32_t ch = found != sc3ToChar.end() ? found->second
                   : sc3ToChar.empty()      ? SghdGlyphChar(glyph.CharId)
@@ -123,28 +138,34 @@ static void ReplyState() {
     if (box->State != UI::Hidden) sysmesbox++;
   const bool sghd =
       Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD;
+  const auto* title = dynamic_cast<const UI::SGHD::TitleMenu*>(UI::TitleMenuPtr);
   Reply(fmt::format(
       "DevState frame={} gamestate={} titlemode={} script={} line={} "
-      "skip={} allskip={} auto={} select={} uihidden={} nolog={} "
-      "sysmenu={} sysmenucur={} savemenu={} titlemenu={} backlog={} "
+      "skip={} allskip={} auto={} select={} uihidden={} nolog={} resuming={} "
+      "sysmenu={} sysmenucur={} savemenu={} titlemenu={} titlestage={} "
+      "titlecur={} titlesub={} backlog={} "
       "sysmesbox={} "
       "phoneopen={} phonect={} phonemode={} glyphs={} rows={} opaque={} "
       "mastervol={} "
-      "name=\"{}\" text=\"{}\"",
+      "name=\"{}\" text=\"{}\" wrapped=\"{}\"",
       Frame, ScrWork[SW_GAMESTATE], (int)GetFlag(SF_TITLEMODE),
       ScrWork[SW_SCRIPTID], ScrWork[SW_LINEID], (int)GetFlag(SF_MESSKIP),
       (int)GetFlag(SF_MESALLSKIP), (int)AutoModeEnabled,
       (int)GetFlag(SF_SELECTMODE), (int)GetFlag(SF_UIHIDDEN),
-      (int)GetFlag(SF_BACKLOG_NOLOG), MenuStateOf(UI::SystemMenuPtr),
+      (int)GetFlag(SF_BACKLOG_NOLOG), (int)SaveSystem::ResumeLine.has_value(),
+      MenuStateOf(UI::SystemMenuPtr),
       ScrWork[SW_SYSMENUCNO],
       MenuStateOf(UI::SaveMenuPtr), MenuStateOf(UI::TitleMenuPtr),
-      MenuStateOf(UI::BacklogMenuPtr), sysmesbox,
+      title ? title->DevStage() : -1, title ? title->DevMainCursor() : -1,
+      title ? title->DevSubCursor() : -1, MenuStateOf(UI::BacklogMenuPtr),
+      sysmesbox,
       sghd ? (int)GetFlag(2600) : -1,  // phone.cpp SF_PhoneOpen
       sghd ? ScrWork[6801] : -1, sghd ? ScrWork[6802] : -1,
       page ? page->Glyphs.size() : 0, page ? TextRows(page->Glyphs) : 0,
       page ? (int)page->TextIsFullyOpaque() : 0,
       (int)(Audio::MasterVolume * 100), page ? GlyphText(page->Name) : "",
-      page ? GlyphText(page->Glyphs) : ""));
+      page ? GlyphText(page->Glyphs) : "",
+      page ? GlyphText(page->Glyphs, true) : ""));
 }
 
 // Device id stamped on events pushed here, so DropEvent can tell them apart.
@@ -297,7 +318,7 @@ void Apply() {
       std::string out;
       for (int i = from; i <= to; i++)
         out += fmt::format(" {}={}", i, cmd == "sw" ? ScrWork[i] : (int)GetFlag(i));
-      ImpLog(LogLevel::Info, LogChannel::General, "DevInput {}:{}\n", cmd, out);
+      Reply(fmt::format("Dev{}:{}", cmd, out));
     } else if (cmd == "setsw" || cmd == "setflag") {
       int idx = 0, value = 0;
       in >> idx >> value;

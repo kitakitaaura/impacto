@@ -22,6 +22,11 @@ class TitleMenu : public Menu {
 
   void ScriptTick(int mode);
 
+  // Tests (DevInput state): stage (0 Press Enter, 1 main, 2 sub), cursors.
+  int DevStage() const { return (int)CurStage; }
+  int DevMainCursor() const { return MainCursor; }
+  int DevSubCursor() const { return SubCursor; }
+
  private:
   enum class Stage { PressStart, Main, Sub };
 

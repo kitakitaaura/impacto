@@ -17,7 +17,11 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEV = os.path.join(ROOT, "noberu-dev")
 BINARY = os.path.join(ROOT, "install", "Release", "Impacto.app", "Contents",
                       "MacOS", "Impacto")
-LOG = os.path.join(DEV, "impacto.log")  # userconfig LogFile wins over -lf
+USERCONFIG = os.path.expanduser(
+    "~/Library/Application Support/Committee of Zero/Impacto/userconfig.toml")
+# Log level for test runs; IMPACTO_TEST_LOG=Trace for VM traces (check.py),
+# which grow by hundreds of MB a minute.
+LOG_LEVEL = os.environ.get("IMPACTO_TEST_LOG", "Info")
 
 STATE_RE = re.compile(r'(\w+)=("(?:[^"]*)"|\S+)')
 
@@ -57,7 +61,7 @@ class Game:
         self.out = self.cmd + ".out"
         self.read_pos = 0
         self.proc = None
-        self.log_start = 0
+        self.log = None
 
     # -- process ---------------------------------------------------------
     def start(self, extra_args=()):
@@ -73,7 +77,25 @@ class Game:
         env = dict(os.environ, IMPACTO_MUTE="1", IMPACTO_DEV_INPUT=self.cmd,
                    IMPACTO_DEV_INPUT_ONLY="1",
                    SDL_WINDOW_ACTIVATE_WHEN_SHOWN="0")
-        self.log_start = os.path.getsize(LOG) if os.path.exists(LOG) else 0
+        # A private userconfig: its own log (the config's LogFile wins over
+        # -lf), our log level, and the user's own config is never rewritten.
+        self.log = os.path.join(self.tmp, "impacto.log")
+        userconfig = os.path.join(self.tmp, "userconfig.toml")
+        text = ""
+        if os.path.exists(USERCONFIG):
+            with open(USERCONFIG) as f:
+                text = f.read()
+        text = re.sub(r'(?m)^(LogFile|LogLvl|LoggingToConsole) = .*\n', "", text)
+        settings = ('LogFile = "%s"\nLogLvl = "%s"\nLoggingToConsole = false\n'
+                    % (self.log, LOG_LEVEL))
+        if "[CommonSettings]" in text:
+            text = text.replace("[CommonSettings]\n",
+                                "[CommonSettings]\n" + settings, 1)
+        else:
+            text += "\n[CommonSettings]\n" + settings
+        with open(userconfig, "w") as f:
+            f.write(text)
+        extra_args = ("-uc", userconfig, *extra_args)
         self.proc = subprocess.Popen(
             [BINARY, "-bp", basepaths, "-gc",
              os.path.join(DEV, "gamedefinitions.lua"), "-g", self.profile,
@@ -142,6 +164,19 @@ class Game:
             raise AssertionError("game is not muted (mastervol=%s)" %
                                  state["mastervol"])
         return state
+
+    def sw(self, first, last=None):
+        """ScrWork[first..last] as {index: value}."""
+        return self._dump("sw", first, last)
+
+    def flag(self, first, last=None):
+        return self._dump("flag", first, last)
+
+    def _dump(self, kind, first, last):
+        line = self.request("%s %d %d" % (kind, first, last or first),
+                            "Dev%s:" % kind)
+        return {int(k): int(v) for k, v in
+                (pair.split("=") for pair in line.split(":", 1)[1].split())}
 
     def wait_for(self, predicate, timeout=30, interval=0.2, what="condition"):
         """Polls state() until predicate(state) is true; returns that state."""
@@ -215,12 +250,9 @@ class Game:
 
     # -- log -------------------------------------------------------------
     def log_lines(self):
-        # Impacto truncates the log when it starts; read from our start only
-        # if the file still holds the previous run's text.
-        if os.path.getsize(LOG) < self.log_start:
-            self.log_start = 0
-        with open(LOG, "rb") as f:
-            f.seek(self.log_start)
+        if not os.path.exists(self.log):
+            return []
+        with open(self.log, "rb") as f:
             return f.read().decode("utf-8", "replace").splitlines()
 
     def log_errors(self, ignore=()):
