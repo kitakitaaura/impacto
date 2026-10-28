@@ -393,6 +393,8 @@ class BaseRenderer {
   }
 
   virtual void CaptureScreencap(Sprite& sprite) = 0;
+  // Dev/test aid: write the finished frame to `path` as a binary PPM.
+  virtual bool CaptureFrame(std::string const& path) { return false; }
 
   virtual void SetFramebuffer(size_t buffer) = 0;
   virtual int GetFramebufferTexture(size_t buffer) = 0;

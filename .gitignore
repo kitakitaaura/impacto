@@ -302,3 +302,5 @@ noberu-dev/*.log
 noberu-dev/devinput.txt
 noberu-dev/wasm/out/
 noberu-dev/wasm/vcpkg_installed/
+noberu-dev/tests/out/
+noberu-dev/tests/__pycache__/

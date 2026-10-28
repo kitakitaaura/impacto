@@ -113,6 +113,7 @@ class Renderer : public BaseRenderer {
                          const glm::vec4 tint) override;
 
   void CaptureScreencap(Sprite& sprite) override;
+  bool CaptureFrame(std::string const& path) override;
 
   void SetFramebuffer(size_t buffer) override {
     Flush();

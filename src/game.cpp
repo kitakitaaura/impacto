@@ -325,6 +325,7 @@ void UpdateSystem(float dt) {
       }
     }
 
+    if (DevInput::DropEvent(&e)) continue;
     if (HandleWindowEvents(&e)) continue;
 #ifndef IMPACTO_DISABLE_IMGUI
     ImGuiIO& io = ImGui::GetIO();
@@ -793,6 +794,7 @@ void Render() {
   ApplyCursorForFrame();
 
   Renderer->EndFrame();
+  DevInput::AfterRender();
 
   Window->Draw();
 }

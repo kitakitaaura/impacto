@@ -1207,6 +1207,39 @@ void Renderer::DrawVideoTexture(const NV12Frame& frame, const RectF& dest,
   InsertVerticesQuad(dest, RectF(0.0f, 0.0f, 1.0f, 1.0f), tint);
 }
 
+bool Renderer::CaptureFrame(std::string const& path) {
+  // Called after EndFrame(), so everything is already flushed.
+  const RectF viewport = Window->GetViewport();
+  const int width = (int)viewport.Width;
+  const int height = (int)viewport.Height;
+  std::vector<uint8_t> pixels((size_t)width * height * 4);
+
+  int prevReadBuffer;
+  int drawBuffer;
+  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadBuffer);
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawBuffer);
+  GLC::BindFramebuffer(GL_READ_FRAMEBUFFER, drawBuffer);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+  GLC::BindFramebuffer(GL_READ_FRAMEBUFFER, prevReadBuffer);
+
+  FILE* file = fopen(path.c_str(), "wb");
+  if (!file) return false;
+  fprintf(file, "P6\n%d %d\n255\n", width, height);
+  std::vector<uint8_t> row((size_t)width * 3);
+  for (int y = height - 1; y >= 0; y--) {  // GL rows are bottom-up
+    const uint8_t* src = &pixels[(size_t)y * width * 4];
+    for (int x = 0; x < width; x++) {
+      row[x * 3 + 0] = src[x * 4 + 0];
+      row[x * 3 + 1] = src[x * 4 + 1];
+      row[x * 3 + 2] = src[x * 4 + 2];
+    }
+    fwrite(row.data(), 1, row.size(), file);
+  }
+  fclose(file);
+  return true;
+}
+
 void Renderer::CaptureScreencap(Sprite& sprite) {
   Flush();
   sprite.Sheet.IsScreenCap = true;
