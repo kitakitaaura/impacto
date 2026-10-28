@@ -62,6 +62,8 @@ void SaveMenu::Choose() {
       SaveSystem::GetSaveStatus(TypeFor(ActiveMenuType), id);
   // Loading needs a filled slot; saving can target any slot.
   if (status == 0 && ActiveMenuType != SaveMenuPageType::Save) return;
+  // The script loads with LoadData(SW_SAVEFILETYPE, SW_SAVEFILENO).
+  ScrWork[SW_SAVEFILETYPE] = (int)TypeFor(ActiveMenuType);
   ScrWork[SW_SAVEFILENO] = id;
   ScrWork[SW_SAVEFILESTATUS] = status;
   ChoiceMade = true;

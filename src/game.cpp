@@ -272,8 +272,13 @@ void UpdateGameState(float dt) {
     UpdateSecondCounter -= 1.0f;
   }
 
+  // Steam STEINS;GATE: while the phone is up, Back steers the phone.
+  const bool phoneHasInput =
+      Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD &&
+      UI::SGHD::Phone::TakesBack();
   if ((ScrWork[SW_GAMESTATE] & 5) == 1 && !GetFlag(SF_SYSTEMMENUDISABLE) &&
       !GetFlag(SF_GAMEPAUSE) && !GetFlag(SF_SYSMENUDISABLE) &&
+      !phoneHasInput &&
       Vm::Interface::GetControlState(Vm::Interface::ControlType::Hide)) {
     // Some more stuff here?
     if ((GetFlag(SF_MESWINDOW0OPENFL) &&

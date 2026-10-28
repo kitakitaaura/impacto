@@ -31,6 +31,9 @@ void Instruction(Vm::Sc3VmThread* thread);
 
 // Once per 60 Hz system tick (open/close counter, 0x459d80).
 void Tick();
+// Up on a screen that handles Back (not the call view, 99), or still
+// sliding: Back belongs to the phone then, not the hide toggle.
+bool TakesBack();
 
 void RenderLayer(uint32_t layer);
 

@@ -224,6 +224,15 @@ void UpdatePADInput() {
   PADinputMouseWentDown = 0;
   PADinputButtonIsDown = 0;
   PADinputMouseIsDown = 0;
+  // Steam STEINS;GATE: scrolling up opens the backlog, like its F2 key
+  // (the game's HELP page). Before the PAD mapping so it counts as F2.
+  if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD &&
+      Input::MouseWheelDeltaY > 0) {
+    ForEachKbCustom(52, [](Input::KeyboardScanCode scancode) {
+      Input::KeyboardButtonWentDown[scancode] = true;
+    });
+  }
+
   for (uint32_t i = 0; i < 32; i++) {
     auto PADcode = static_cast<PADinput>(1u << (uint8_t)i);
     UpdateFromPADCode(PADcode, PADInputType::WentDown);
@@ -267,9 +276,12 @@ bool GetControlState(ControlType::ControlTypeEnum controlId,
     case Back:
       return padInputDown & PADcustom[6];
     case Hide:
-      return PADcustom[11] ? (PADcustom[11] & PADinputButtonWentDown)
-                           : (PADcustom[6] & PADinputButtonWentDown) ||
-                                 Input::TouchFlickUp;
+      if (PADcustom[11]) return PADcustom[11] & PADinputButtonWentDown;
+      // Back doubles as Hide. A key bound to both Back and the system menu
+      // (Escape in the Steam STEINS;GATE profile) opens the menu instead:
+      // hiding first makes the script skip its menu check.
+      if (PADcustom[10] & PADinputButtonWentDown) return Input::TouchFlickUp;
+      return (PADcustom[6] & PADinputButtonWentDown) || Input::TouchFlickUp;
     case NextMessage:
       return padInputDown & PADcustom[23];
     case ForceSkip:

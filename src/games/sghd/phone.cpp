@@ -1847,6 +1847,11 @@ static void Update() {
   }
 }
 
+bool TakesBack() {
+  return (GetFlag(SF_PhoneOpen) || ScrWork[SW_PhoneCt] > 0) &&
+         ScrWork[SW_PhoneMode] != 99;
+}
+
 void Tick() {
   int& ct = ScrWork[SW_PhoneCt];
   if (GetFlag(SF_PhoneOpen)) {

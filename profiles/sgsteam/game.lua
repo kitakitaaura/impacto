@@ -23,21 +23,32 @@ include(root.BasePaths.RootProfilesDir .. '/sgsteam/font.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/charset.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/dialogue.lua');
 
--- The PC release uses Escape like right click: open the menu, or back out.
+-- Keys from the game's own HELP pages (manual.mpk): 1 system menu, Shift hide
+-- text, Backspace back, Ctrl force skip, E skip mode, Z/C phone, Insert/F2
+-- backlog, Delete auto. Shift shares B with Back, as on the pad ("BACK / HIDE
+-- WINDOW"). The original quits on Escape; here Escape works like right click
+-- (open the menu, or back out), which is what browser players reach for.
 for _, pad in ipairs({ root.PADinput.PAD1START, root.PADinput.PAD1B }) do
     table.insert(root.Input.PADtoKBcustom[pad], { Id = 60, Mode = KbInputMode.Any });
 end
+-- F2 (and the wheel, see vm/interface/input.cpp) opens the backlog, which
+-- _STARTUP_WIN.SCX reads as PADcustom 12 (Y, also Insert).
+table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1Y], { Id = 52, Mode = KbInputMode.Tap });
+table.insert(root.Input.KBcustom[5], KeyboardScanCode._LSHIFT);
+table.insert(root.Input.KBcustom[5], KeyboardScanCode._RSHIFT);
 -- Steam keys: hold Ctrl to skip (fast-forward, L1), F3 toggles Auto (X).
 -- Ctrl counts only while held, so it never flips save pages like L1 taps do.
 table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1L1], { Id = 50, Mode = KbInputMode.Held });
 table.insert(root.Input.PADtoKBcustom[root.PADinput.PAD1X], { Id = 53, Mode = KbInputMode.Tap });
 
 -- Phone trigger: _STARTUP_WIN.SCX opens the phone on PADcustom slot 22, which
--- the shared table leaves empty. Bind it to L3 (unused), Tab/P and middle click.
+-- the shared table leaves empty. Bind it to L3 (unused), Z/C (the manual's
+-- keys), Tab/P and middle click.
 for _, list in ipairs({ root.Input.PADcustomA, root.Input.PADcustomB }) do
     list[23] = root.PADinput.PAD1L3;  -- Lua is 1-based: slot 22
 end
-root.Input.KBcustom[10] = { KeyboardScanCode._TAB, KeyboardScanCode._P };
+root.Input.KBcustom[10] = { KeyboardScanCode._Z, KeyboardScanCode._C,
+                            KeyboardScanCode._TAB, KeyboardScanCode._P };
 root.Input.PADtoMS[root.PADinput.PAD1L3] = 2;
 
 root.WindowName = "STEINS;GATE";
@@ -72,3 +83,4 @@ include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/titlemenu.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/savemenu.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/systemmenu.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/sysmesboxdisplay.lua');
+include(root.BasePaths.RootProfilesDir .. '/sgsteam/hud/backlogmenu.lua');
