@@ -1,0 +1,17 @@
+Bink 2: has_alpha must be 0 or 1. It held the raw BINK_FLAG_ALPHA bit
+(0x100000) and loops such as `comp < 3 + c->has_alpha` ran off the planes,
+so every Bink 2 file with alpha (Steins;Gate Steam title.bk2, imv001...)
+crashed. Same fix as vracton/bink2-converter.
+
+diff --git a/libavcodec/bink2.c b/libavcodec/bink2.c
+--- a/libavcodec/bink2.c
++++ b/libavcodec/bink2.c
+@@ -359,7 +359,7 @@
+     }
+     c->flags = AV_RL32(avctx->extradata);
+     av_log(avctx, AV_LOG_DEBUG, "flags: 0x%X\n", c->flags);
+-    c->has_alpha = c->flags & BINK_FLAG_ALPHA;
++    c->has_alpha = !!(c->flags & BINK_FLAG_ALPHA);
+     c->avctx = avctx;
+     c->slice_ctx[0] = c;
+ 
