@@ -1,22 +1,30 @@
 // Dev server for the impacto web build: serves out/ and, for ?local=1 testing,
 // the game folder under /gamedata/ with HTTP Range support plus a JSON listing.
-//   node noberu-dev/wasm/serve.mjs [port]     (game folder: ../../gamedata/sgsteam)
+//   node noberu-dev/wasm/serve.mjs [port] [build folder, default out]
+//   (game folder: ../../gamedata/sgsteam). Pages are cross-origin isolated,
+//   which the threaded build (out-mt) needs for SharedArrayBuffer.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const out = path.join(here, 'out');
+const out = path.join(here, process.argv[3] || 'out');
 const game = fs.realpathSync(path.join(here, '../../gamedata/sgsteam'));
 const port = Number(process.argv[2] || 8765);
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
                 '.json': 'application/json', '.data': 'application/octet-stream' };
 
+// The archives, plus the 1080p movies and the English patch's replacements.
 function listArchives() {
-  const dir = path.join(game, 'USRDIR');
-  return fs.readdirSync(dir).filter((f) => f.endsWith('.mpk'))
-    .map((f) => ({ path: 'USRDIR/' + f, size: fs.statSync(path.join(dir, f)).size }));
+  const list = (sub, ext) => {
+    const dir = path.join(game, sub);
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith(ext))
+      .map((f) => ({ path: sub + '/' + f, size: fs.statSync(path.join(dir, f)).size }));
+  };
+  return [...list('USRDIR', '.mpk'), ...list('USRDIR/movie/1920x1080', '.bk2'),
+          ...list('languagebarrier/videos/1080p', '.bk2')];
 }
 
 http.createServer((req, res) => {
@@ -32,7 +40,9 @@ http.createServer((req, res) => {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404); return res.end(); }
     const headers = { 'content-type': types[path.extname(file)] || 'application/octet-stream',
-                      'accept-ranges': 'bytes', 'cache-control': 'no-store' };
+                      'accept-ranges': 'bytes', 'cache-control': 'no-store',
+                      'cross-origin-opener-policy': 'same-origin',
+                      'cross-origin-embedder-policy': 'require-corp' };
     const range = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
     if (range) {
       const start = Number(range[1]);

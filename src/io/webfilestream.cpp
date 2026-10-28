@@ -3,10 +3,15 @@
 #include "webfilestream.h"
 #include "../log.h"
 
+#include "../impacto.h"
+
 #include <emscripten.h>
+#include <emscripten/threading.h>
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <list>
+#include <mutex>
 #include <vector>
 
 // The page keeps File objects in Module.noberuFiles (a Map from path to File).
@@ -20,6 +25,29 @@ EM_JS(int, noberu_file_open, (const char* path), {
 
 EM_JS(double, noberu_file_size, (int handle), {
   return Module.noberuOpenFiles[handle].size;
+});
+
+// A URL worker threads can read the file through (threaded builds): the dev
+// server's for ?local=1 files, else a blob: URL for the picked File.
+EM_JS(char*, noberu_file_url, (int handle), {
+  const file = Module.noberuOpenFiles[handle];
+  const url = file.url || (file.noberuUrl = file.noberuUrl || URL.createObjectURL(file));
+  return stringToNewUTF8(url);
+});
+
+// Worker threads can't await; a synchronous ranged XHR works there (blob: and
+// http URLs both answer 206 with the slice).
+EM_JS(int, noberu_url_read_sync,
+      (const char* url, double offset, void* buffer, int length), {
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', UTF8ToString(url), false);
+  xhr.responseType = 'arraybuffer';
+  xhr.setRequestHeader('Range', 'bytes=' + offset + '-' + (offset + length - 1));
+  xhr.send();
+  if (xhr.status !== 206 && xhr.status !== 200) return -1;
+  const data = new Uint8Array(xhr.response);
+  HEAPU8.set(data.subarray(0, length), buffer);
+  return Math.min(data.byteLength, length);
 });
 
 EM_ASYNC_JS(int, noberu_file_read,
@@ -41,25 +69,39 @@ constexpr size_t MaxCachedBlocks = 16;
 struct WebFileStream::Shared {
   int Handle = -1;
   int64_t Size = 0;
-  // Most recently used first.
-  std::list<std::pair<int64_t, std::vector<uint8_t>>> Blocks;
+  std::string Url;  // for reads off the main thread
+  // Most recently used first. Blocks are shared_ptrs so a reader keeps its
+  // block while another thread evicts it.
+  std::list<std::pair<int64_t, std::shared_ptr<std::vector<uint8_t>>>> Blocks;
+  std::mutex Lock;
 
-  const std::vector<uint8_t>* GetBlock(int64_t index) {
-    for (auto it = Blocks.begin(); it != Blocks.end(); ++it) {
-      if (it->first == index) {
-        Blocks.splice(Blocks.begin(), Blocks, it);
-        return &Blocks.front().second;
+  int ReadAt(int64_t offset, void* dest, int length) {
+#if IMPACTO_HAVE_THREADS
+    if (!emscripten_is_main_runtime_thread())
+      return noberu_url_read_sync(Url.c_str(), (double)offset, dest, length);
+#endif
+    return noberu_file_read(Handle, (double)offset, dest, length);
+  }
+
+  std::shared_ptr<std::vector<uint8_t>> GetBlock(int64_t index) {
+    {
+      std::lock_guard lock(Lock);
+      for (auto it = Blocks.begin(); it != Blocks.end(); ++it) {
+        if (it->first == index) {
+          Blocks.splice(Blocks.begin(), Blocks, it);
+          return Blocks.front().second;
+        }
       }
     }
+    // Read without the lock: the main thread awaits (ASYNCIFY) here.
     const int64_t start = index * BlockSize;
     const int64_t length = std::min(BlockSize, Size - start);
-    std::vector<uint8_t> data(length);
-    const int read = noberu_file_read(Handle, (double)start, data.data(),
-                                      (int)length);
-    if (read != length) return nullptr;
-    Blocks.emplace_front(index, std::move(data));
+    auto data = std::make_shared<std::vector<uint8_t>>(length);
+    if (ReadAt(start, data->data(), (int)length) != length) return nullptr;
+    std::lock_guard lock(Lock);
+    Blocks.emplace_front(index, data);
     if (Blocks.size() > MaxCachedBlocks) Blocks.pop_back();
-    return &Blocks.front().second;
+    return data;
   }
 };
 
@@ -74,6 +116,11 @@ IoError WebFileStream::Create(std::string const& path, Stream** out) {
   auto shared = std::make_shared<Shared>();
   shared->Handle = handle;
   shared->Size = (int64_t)noberu_file_size(handle);
+#if IMPACTO_HAVE_THREADS
+  char* url = noberu_file_url(handle);
+  shared->Url = url;
+  free(url);
+#endif
   auto* stream = new WebFileStream(std::move(shared));
   stream->Meta.FileName = path;
   *out = stream;
@@ -88,8 +135,7 @@ int64_t WebFileStream::Read(void* buffer, int64_t sz) {
 
   // Big reads (whole images, voice clips) go straight to the file.
   if (sz >= BlockSize) {
-    const int read = noberu_file_read(Data->Handle, (double)Position, dest,
-                                      (int)sz);
+    const int read = Data->ReadAt(Position, dest, (int)sz);
     if (read <= 0) return IoError_Fail;
     Position += read;
     return read;
@@ -98,7 +144,7 @@ int64_t WebFileStream::Read(void* buffer, int64_t sz) {
   int64_t done = 0;
   while (done < sz) {
     const int64_t index = (Position + done) / BlockSize;
-    const std::vector<uint8_t>* block = Data->GetBlock(index);
+    const auto block = Data->GetBlock(index);
     if (!block) {
       ImpLog(LogLevel::Error, LogChannel::IO, "Read failed for \"{:s}\"\n",
              Meta.FileName);

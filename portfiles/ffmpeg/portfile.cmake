@@ -55,6 +55,14 @@ elseif(VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Android")
     string(APPEND OPTIONS " --target-os=android --enable-jni --enable-mediacodec")
 elseif(VCPKG_CMAKE_SYSTEM_NAME STREQUAL "QNX")
     string(APPEND OPTIONS " --target-os=qnx")
+elseif(VCPKG_TARGET_IS_EMSCRIPTEN)
+    # noberu web build (THREADS=1): decoder-only, just what the Steam
+    # STEINS;GATE movies need (Bink 2 video, Bink audio). No FFmpeg-internal
+    # threads: probing a file on the main thread would start decoder threads
+    # beyond the browser's worker pool, which only start once the main thread
+    # yields - a deadlock. impacto's player already decodes on its own thread.
+    string(APPEND OPTIONS " --target-os=none --arch=x86_32 --disable-asm --disable-inline-asm --disable-pthreads")
+    string(APPEND OPTIONS " --disable-everything --enable-demuxer=bink --enable-decoder=bink,bink2,binkaudio_rdft,binkaudio_dct")
 endif()
 
 if(VCPKG_TARGET_IS_OSX)

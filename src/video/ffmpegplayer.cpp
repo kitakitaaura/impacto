@@ -579,7 +579,11 @@ void FFmpegPlayer::Decode(FFmpegStream<MediaType>& stream) {
           if (prevSerial != stream.CurrentPacketSerial) {
             avcodec_flush_buffers(VideoStream->CodecContext.raw());
             if constexpr (MediaType == AVMEDIA_TYPE_AUDIO) {
+#ifdef __EMSCRIPTEN__
+              AudioStopRequest = true;
+#else
               AudioPlayer->Stop();
+#endif
             }
           }
           if (stream.PacketQueueSerial == stream.CurrentPacketSerial) {
@@ -715,6 +719,7 @@ void FFmpegPlayer::Seek(int64_t pos) {
 void FFmpegPlayer::Update(float dt) {
   if (IsPlaying) {
     using namespace std::literals::chrono_literals;
+    if (AudioStopRequest.exchange(false)) AudioPlayer->Stop();
     if (AudioStream) AudioPlayer->Process();
 
     if (+Profile::Game::GameFeatures & +GameFeature::Subtitles && SubPlayer) {

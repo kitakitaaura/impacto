@@ -53,6 +53,9 @@ class FFmpegPlayer : public VideoPlayer {
   void ProcessAudio();
 
   std::atomic<bool> AbortRequest;
+  // Browser builds: OpenAL lives on the main thread, so a decoder thread
+  // asks Update() to stop the audio source instead of doing it itself.
+  std::atomic<bool> AudioStopRequest = false;
   bool SeekRequest;
   std::thread ReadThread;
   std::optional<FFmpegStream<AVMEDIA_TYPE_VIDEO>> VideoStream;

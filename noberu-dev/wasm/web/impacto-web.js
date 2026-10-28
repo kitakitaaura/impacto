@@ -11,7 +11,11 @@
     for (const file of list) {
       // "<picked folder>/USRDIR/bg.mpk" -> "/gamedata/sgsteam/USRDIR/bg.mpk"
       const rel = file.webkitRelativePath.split('/').slice(1).join('/');
-      if (!rel.startsWith('USRDIR/') || !rel.toLowerCase().endsWith('.mpk')) continue;
+      const lower = rel.toLowerCase();
+      const wanted = (lower.startsWith('usrdir/') && lower.endsWith('.mpk')) ||
+        ((lower.startsWith('usrdir/movie/1920x1080/') ||
+          lower.startsWith('languagebarrier/videos/1080p/')) && lower.endsWith('.bk2'));
+      if (!wanted) continue;
       files.set('/gamedata/sgsteam/' + rel, file);
     }
     return files;
@@ -32,6 +36,13 @@
         if (new URLSearchParams(location.search).has('mute')) m.ENV.IMPACTO_MUTE = '1';
         // ?dev=1: DevInput through an in-memory file, see impactoDev below.
         if (new URLSearchParams(location.search).has('dev')) m.ENV.IMPACTO_DEV_INPUT = DEV_FILE;
+        // Loose files (movies) get empty stand-ins so folder mounts can list
+        // them; reads go to the real File (src/io/webfilestream.cpp).
+        for (const path of files.keys()) {
+          if (path.toLowerCase().endsWith('.mpk')) continue;
+          m.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
+          m.FS.writeFile(path, new Uint8Array(0));
+        }
         m.FS.mkdir('/saves');
         m.FS.mount(m.IDBFS, {}, '/saves');
       }],
@@ -40,7 +51,9 @@
         if (err) console.warn('save sync failed', err);
       }),
     };
+    window.noberuStats?.marks && (window.noberuStats.marks.engineLoad = Math.round(performance.now()));
     const module = await createImpacto(config);
+    window.noberuStats?.marks && (window.noberuStats.marks.engineReady = Math.round(performance.now()));
     // impactoDev('state') -> the reply line (src/devinput.h lists commands).
     window.impactoDev = async (cmd, prefix = 'Dev', timeoutMs = 5000) => {
       const { FS } = module;
@@ -63,6 +76,7 @@
     say('starting...');
     canvas.focus();
     // userconfig.toml lives with the saves so settings persist too.
+    window.noberuStats?.marks && (window.noberuStats.marks.main = Math.round(performance.now()));
     module.callMain(['-bp', '/web/basepaths.lua', '-gc', '/web/gamedefinitions.lua',
                      '-uc', '/saves/userconfig.toml', '-g', 'sgsteam']);
   }
@@ -70,13 +84,20 @@
   // Dev mode (?local=1 with serve.mjs): File-like objects whose slice() fetches
   // byte ranges from the dev server, so the engine path is the same as with a
   // picked folder.
+  // Start-up profile for ?local=1 runs: reads (count, bytes, ms waiting)
+  // and timestamps since navigation (window.noberuStats).
+  const stats = window.noberuStats = { reads: 0, bytes: 0, readMs: 0, marks: {} };
+  const mark = (name) => { stats.marks[name] = Math.round(performance.now()); };
   class RangeFile {
-    constructor(url, size) { this.url = url; this.size = size; }
+    constructor(url, size) { this.url = new URL(url, location.href).href; this.size = size; }
     slice(start, end) {
       const url = this.url;
       return { arrayBuffer: async () => {
+        const t = performance.now();
         const res = await fetch(url, { headers: { Range: `bytes=${start}-${end - 1}` } });
-        return res.arrayBuffer();
+        const data = await res.arrayBuffer();
+        stats.reads++; stats.bytes += data.byteLength; stats.readMs += performance.now() - t;
+        return data;
       } };
     }
   }

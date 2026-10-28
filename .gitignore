@@ -304,3 +304,5 @@ noberu-dev/wasm/out/
 noberu-dev/wasm/vcpkg_installed/
 noberu-dev/tests/out/
 noberu-dev/tests/__pycache__/
+noberu-dev/wasm/out-mt/
+noberu-dev/wasm/vcpkg_installed-mt/

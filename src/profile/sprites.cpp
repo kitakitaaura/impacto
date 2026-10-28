@@ -49,9 +49,15 @@ void LoadSpritesheets() {
         Window->Shutdown();
       }
 
-      futures.emplace_back(std::tuple(
-          name, std::async(IMPACTO_HAVE_THREADS ? std::launch::async : std::launch::deferred,
-                     LoadTexture, stream, name)));
+      // Browser threads beyond the pool only start once the main thread
+      // yields, so waiting on one thread per sheet would deadlock there.
+#if IMPACTO_HAVE_THREADS && !defined(__EMSCRIPTEN__)
+      constexpr auto policy = std::launch::async;
+#else
+      constexpr auto policy = std::launch::deferred;
+#endif
+      futures.emplace_back(
+          std::tuple(name, std::async(policy, LoadTexture, stream, name)));
     }
     Pop();
   }

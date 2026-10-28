@@ -1202,8 +1202,10 @@ if (NOT DEFINED IMPACTO_DISABLE_FFMPEG)
 
     list(APPEND Impacto_Include_Dirs ${FFMPEG_INCLUDE_DIRS})
     list(APPEND Impacto_Libs ${FFMPEG_LIBRARIES})
-    pkg_check_modules(dav1d REQUIRED IMPORTED_TARGET dav1d)
-    list(APPEND Impacto_Libs PkgConfig::dav1d)
+    if (NOT EMSCRIPTEN)  # the web FFmpeg is decoder-only (Bink), no dav1d
+        pkg_check_modules(dav1d REQUIRED IMPORTED_TARGET dav1d)
+        list(APPEND Impacto_Libs PkgConfig::dav1d)
+    endif ()
     if(ANDROID)
         find_library(mediandk-lib mediandk)
         list(APPEND Impacto_Libs ${mediandk-lib})
@@ -1340,6 +1342,15 @@ if (EMSCRIPTEN)
         "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/noberu-dev/wasm/config@/web"
         --profiling-funcs
     )
+    if (IMPACTO_HAVE_THREADS)
+        # THREADS=1 build.sh: the engine still runs on the page's main thread
+        # (ASYNCIFY for frames and main-thread reads); the pool covers the
+        # work queue and the FFmpeg player's reader/decoder threads, which
+        # must exist before main() can wait on them.
+        target_link_options(impacto PRIVATE
+            -pthread -sPTHREAD_POOL_SIZE=8 -sMAXIMUM_MEMORY=2GB
+        )
+    endif ()
 endif ()
 
 target_compile_options(impacto PRIVATE "$<$<C_COMPILER_ID:MSVC>:/utf-8>")

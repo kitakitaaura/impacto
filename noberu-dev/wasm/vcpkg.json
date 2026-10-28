@@ -4,7 +4,10 @@
   "version-string": "0",
   "builtin-baseline": "62159a45e18f3a9ac0548628dcaf74fcb60c6ff9",
   "dependencies": [
-    { "name": "sdl3", "default-features": false },
+    {
+      "name": "sdl3",
+      "default-features": false
+    },
     "libogg",
     "libvorbis",
     "opus",
@@ -23,6 +26,30 @@
     "harfbuzz"
   ],
   "overrides": [
-    { "name": "sdl3", "version": "3.4.0" }
-  ]
+    {
+      "name": "sdl3",
+      "version": "3.4.0"
+    }
+  ],
+  "features": {
+    "movies": {
+      "description": "Decoder-only FFmpeg (Bink 2) and avcpp for the threaded build's movie player",
+      "dependencies": [
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "avcodec",
+            "avformat",
+            "swresample",
+            "swscale"
+          ]
+        },
+        {
+          "name": "avcpp",
+          "default-features": false
+        }
+      ]
+    }
+  }
 }

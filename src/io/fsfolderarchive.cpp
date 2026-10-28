@@ -3,6 +3,7 @@
 #include "../log.h"
 #include "io.h"
 #include "physicalfilestream.h"
+#include "webfilestream.h"
 #include "vfs.h"
 #include "../util.h"
 #include <sstream>
@@ -24,7 +25,13 @@ struct TextMetaEntry : FileMeta {
 
 IoError FSFolderArchive::Open(FileMeta* file, Stream** outStream) {
   TextMetaEntry* entry = (TextMetaEntry*)file;
-  IoError err = PhysicalFileStream::Create(entry->FullPath, outStream);
+  IoError err = IoError_NotFound;
+#ifdef __EMSCRIPTEN__
+  // Browser builds: the folder holds stand-ins; the page has the real File.
+  err = WebFileStream::Create(entry->FullPath, outStream);
+  if (err == IoError_NotFound)
+#endif
+    err = PhysicalFileStream::Create(entry->FullPath, outStream);
   if (err != IoError_OK) {
     ImpLog(LogLevel::Error, LogChannel::IO,
            "FSFolderArchive file open failed for file \"{:s}\" in archive "
