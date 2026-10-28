@@ -982,7 +982,12 @@ static void SendReply() {
   const int reply = ScrWork[6817];
   const int original = ScrWork[SW_MailSelected];
   SetMailStatus(reply, 0, 1);
-  if (GetFlag(2610)) SentList.insert(SentList.begin(), (uint32_t)reply);
+  if (GetFlag(2610)) {
+    SentList.insert(SentList.begin(), (uint32_t)reply);
+    // The Sent folder pages by this count; without it the oldest sent mail
+    // dropped off until the phone rebuilt its lists.
+    ScrWork[SW_SentCount] = (int)SentList.size();
+  }
   if (original != 0xFFFF) SetMailStatus(original, 4, 1);
   SendTimer = 60;
   ScrWork[SW_PhoneMode] = 9;
@@ -1845,6 +1850,10 @@ static void Update() {
     default:
       break;  // script-driven screens, or not ported yet
   }
+}
+
+bool KeypadOpen() {
+  return GetFlag(SF_PhoneOpen) && ScrWork[SW_PhoneMode] == 23;
 }
 
 bool TakesBack() {

@@ -564,8 +564,11 @@ VmInstruction(InstMes) {
 
   if (auto& resume = SaveSystem::ResumeLine) {
     // Reached the saved line (or gave up): stop skipping so it plays normally.
+    const uint64_t seenKey = ((uint64_t)(uint32_t)scriptId << 32) |
+                             (uint32_t)lineId;
     if ((resume->ScriptId == (uint32_t)scriptId &&
          resume->LineId == (uint32_t)lineId) ||
+        !resume->Seen.insert(seenKey).second ||
         ++resume->SkippedLines > 3000) {
       ImpLog(LogLevel::Debug, LogChannel::VM,
              "Resume skip done at script {:d} line {:d} ({:d} lines)\n",

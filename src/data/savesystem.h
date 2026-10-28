@@ -197,6 +197,9 @@ struct ResumeLineTarget {
   uint32_t ScriptId;
   uint32_t LineId;
   int SkippedLines = 0;
+  // Lines passed so far: seeing one again means the story is looping on a
+  // player action (Steam S;G: "where did I put my phone"), so stop there.
+  ankerl::unordered_dense::set<uint64_t> Seen;
 };
 inline std::optional<ResumeLineTarget> ResumeLine;
 void SaveThumbnailData();

@@ -9,6 +9,8 @@
 #include "../../profile/scriptinput.h"
 #include "../../profile/scriptvars.h"
 #include "../../profile/profile_internal.h"
+#include "../../games/sghd/phone.h"
+#include "../../data/savesystem.h"
 
 namespace Impacto {
 namespace Vm {
@@ -224,6 +226,15 @@ void UpdatePADInput() {
   PADinputMouseWentDown = 0;
   PADinputButtonIsDown = 0;
   PADinputMouseIsDown = 0;
+  // While a load fast-forwards to the saved line, the player can't act yet:
+  // a phone or menu opened mid-skip was closed under them by the script.
+  // Raw presses too, since scripts also read keys directly (KeyboardOnJump).
+  if (SaveSystem::ResumeLine) {
+    std::ranges::fill(Input::KeyboardButtonWentDown, false);
+    std::ranges::fill(Input::MouseButtonWentDown, false);
+    std::ranges::fill(Input::ControllerButtonWentDown, false);
+    Input::MouseWheelDeltaX = Input::MouseWheelDeltaY = 0;
+  }
   // Steam STEINS;GATE: scrolling up opens the backlog, like its F2 key
   // (the game's HELP page). Before the PAD mapping so it counts as F2.
   if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD &&
@@ -233,11 +244,39 @@ void UpdatePADInput() {
     });
   }
 
+  // Steam STEINS;GATE dial keypad: number keys and Shift (for # and *) type
+  // there (phone.cpp), so keep them from also being Start ("1" = system
+  // menu) or Back (Shift) for this frame's pad state.
+  std::vector<std::pair<SDL_Scancode, std::pair<bool, bool>>> typing;
+  if (Profile::Vm::GameInstructionSet == InstructionSet::SGHD &&
+      UI::SGHD::Phone::KeypadOpen()) {
+    for (SDL_Scancode code :
+         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
+          SDL_SCANCODE_5, SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8,
+          SDL_SCANCODE_9, SDL_SCANCODE_0, SDL_SCANCODE_KP_1, SDL_SCANCODE_KP_2,
+          SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_5,
+          SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_7, SDL_SCANCODE_KP_8,
+          SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_MULTIPLY,
+          SDL_SCANCODE_KP_DIVIDE, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_RSHIFT}) {
+      typing.push_back({code,
+                        {Input::KeyboardButtonWentDown[code],
+                         Input::KeyboardButtonIsDown[code]}});
+      Input::KeyboardButtonWentDown[code] = false;
+      Input::KeyboardButtonIsDown[code] = false;
+    }
+  }
+
   for (uint32_t i = 0; i < 32; i++) {
     auto PADcode = static_cast<PADinput>(1u << (uint8_t)i);
     UpdateFromPADCode(PADcode, PADInputType::WentDown);
     UpdateFromPADCode(PADcode, PADInputType::IsDown);
   }
+
+  for (const auto& [code, down] : typing) {
+    Input::KeyboardButtonWentDown[code] = down.first;
+    Input::KeyboardButtonIsDown[code] = down.second;
+  }
+
 
   // Sync scroll down & touch flick down with backlog keyboard key.
   if (Input::MouseWheelDeltaY < 0 || Input::TouchFlickDown) {

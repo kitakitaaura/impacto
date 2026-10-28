@@ -9,3 +9,5 @@ local function alphabet(id)
 end
 for id = 128, 189 do alphabet(id); end
 alphabet(201);
+-- £ % # & * stick to their number or word ("120#" broke before the #).
+for id = 414, 418 do alphabet(id); end

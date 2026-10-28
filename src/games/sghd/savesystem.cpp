@@ -847,8 +847,8 @@ void SaveSystem::LoadMemoryNew(LoadProcess load) {
     if (Io::ReadLE<uint32_t>(&resume) == ResumeMagic) {
       const uint32_t scriptId = Io::ReadLE<uint32_t>(&resume);
       const uint32_t lineId = Io::ReadLE<uint32_t>(&resume);
-      Impacto::SaveSystem::ResumeLine =
-          Impacto::SaveSystem::ResumeLineTarget{scriptId, lineId};
+      Impacto::SaveSystem::ResumeLine = Impacto::SaveSystem::ResumeLineTarget{
+          .ScriptId = scriptId, .LineId = lineId};
       ImpLog(LogLevel::Debug, LogChannel::IO,
              "Resuming at script {:d} line {:d}\n", scriptId, lineId);
     }

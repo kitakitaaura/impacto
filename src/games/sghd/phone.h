@@ -34,6 +34,8 @@ void Tick();
 // Up on a screen that handles Back (not the call view, 99), or still
 // sliding: Back belongs to the phone then, not the hide toggle.
 bool TakesBack();
+// The dial keypad (screen 23) is up: number keys type digits there.
+bool KeypadOpen();
 
 void RenderLayer(uint32_t layer);
 
