@@ -194,7 +194,10 @@ void GLWindow::Init() {
 
   // At the time of writing, this is on by default on Intel on Windows until we
   // resize the window???
+  // (WebGL has no such capability and logs INVALID_ENUM.)
+#ifndef __EMSCRIPTEN__
   glDisable(GL_FRAMEBUFFER_SRGB);
+#endif
 
 #if IMPACTO_GL_DEBUG
   int glContextVersion[2]{};
