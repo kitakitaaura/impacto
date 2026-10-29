@@ -68,6 +68,9 @@ using SubtitleMountMapping =
 inline ankerl::unordered_dense::map<std::string, SubtitleMountMapping>
     SubtitleMappings;
 inline std::vector<std::string> SubtitleFontsDir;
+// Family libass falls back to when a style's font is missing (browser builds
+// have no system fonts at all).
+inline std::string SubtitleDefaultFont = "sans-serif";
 
 void Configure();
 }  // namespace Impacto::Profile::Subtitle

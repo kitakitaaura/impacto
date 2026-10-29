@@ -12,6 +12,9 @@
 #include "../profile/subtitle.h"
 #include "../log.h"
 #include "../io/physicalfilestream.h"
+#ifdef __EMSCRIPTEN__
+#include "../io/webfilestream.h"
+#endif
 
 namespace Impacto::Subtitle {
 using namespace Profile::Subtitle;
@@ -91,19 +94,29 @@ void SubtitlePlayer::AddTrackFile(
     Profile::Subtitle::SubtitleConfigType config) {
   if (!CanAddTrack(trackId, type, config)) return;
   auto& backend = Backends[GetBackendIndex(type)];
-  Io::Stream* subtitleFileStream{};
-  if (Io::PhysicalFileStream::Create(path, &subtitleFileStream) !=
-      IoError::IoError_OK) {
+  auto data = ReadWholeFile(path);
+  if (!data) {
     ImpLog(LogLevel::Warning, LogChannel::Subtitle,
            "Failed to read subtitle file {}", path);
     return;
   }
-  std::vector<char> dataBuffer;
+  backend->AddTrackFile(trackId, *data);
+}
 
-  dataBuffer.resize(subtitleFileStream->Meta.Size);
-  subtitleFileStream->Read(dataBuffer.data(), dataBuffer.size());
-  backend->AddTrackFile(trackId, dataBuffer);
-  delete subtitleFileStream;
+std::optional<std::vector<char>> ReadWholeFile(std::string const& path) {
+  Io::Stream* stream{};
+  IoError err = IoError_NotFound;
+#ifdef __EMSCRIPTEN__
+  err = Io::WebFileStream::Create(path, &stream);
+  if (err == IoError_NotFound)
+#endif
+    err = Io::PhysicalFileStream::Create(path, &stream);
+  if (err != IoError_OK) return std::nullopt;
+  std::vector<char> data(stream->Meta.Size);
+  const int64_t read = stream->Read(data.data(), data.size());
+  delete stream;
+  if (read != (int64_t)data.size()) return std::nullopt;
+  return data;
 }
 
 void SubtitlePlayer::PushEntry(int trackId, SubtitleEntry entry) {

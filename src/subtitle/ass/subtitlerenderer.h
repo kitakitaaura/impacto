@@ -103,6 +103,7 @@ class SubtitleRenderer : public Subtitle::SubtitleRenderer {
   std::chrono::milliseconds GetTime() const { return Timer; }
 
   static void InitSystem();
+  static void LoadFonts();
   static ASS_Library* GetAssLibrary() { return AssLibrary.get(); }
   ASS_Renderer* GetAssRenderer() const { return AssRenderer.get(); }
 

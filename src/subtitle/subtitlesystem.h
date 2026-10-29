@@ -6,6 +6,7 @@
 #include <variant>
 #include <string>
 #include <utility>
+#include <optional>
 
 #include "subtitlerenderer.h"
 #include "../video/clock.h"
@@ -50,6 +51,9 @@ class SubtitlePlayer {
 };
 
 void SubtitleInit();
+// Whole loose file (subtitle scripts, fonts); browser builds read the
+// page's File, the filesystem only has empty stand-ins.
+std::optional<std::vector<char>> ReadWholeFile(std::string const& path);
 
 template <typename Track, typename... TrackArgs>
   requires HasAddTrack<Track, TrackArgs...>

@@ -33,6 +33,8 @@ void Configure() {
     SubtitleFontsDir =
         TryGetMember<decltype(SubtitleFontsDir)>("SubtitleFontsDir")
             .value_or(SubtitleFontsDir);
+    SubtitleDefaultFont = TryGetMember<std::string>("DefaultFont")
+                              .value_or(SubtitleDefaultFont);
     Pop();
   }
 }

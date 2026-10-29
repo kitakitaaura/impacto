@@ -32,6 +32,9 @@ struct SubtitleEntry {
   std::chrono::milliseconds Duration{};
 };
 
+// Subtitle images drawn during the current movie frame (DevInput's state).
+inline size_t DrawnImages = 0;
+
 class SubtitleRenderer {
  public:
   SubtitleRenderer(SubtitlePlayer& player, float width, float height)

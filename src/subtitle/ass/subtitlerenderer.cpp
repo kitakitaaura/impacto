@@ -6,6 +6,9 @@
 #include "../../renderer/renderer.h"
 #include "../../profile/subtitle.h"
 #include "../../profile/game.h"
+#include "../subtitlesystem.h"
+
+#include <filesystem>
 
 namespace Impacto {
 namespace Subtitle {
@@ -15,16 +18,18 @@ std::unique_ptr<ASS_Library, AssDeleter> SubtitleRenderer::AssLibrary;
 using namespace Profile::Subtitle;
 
 void AssMsgHandler(int level, const char* fmt, va_list va, void* data) {
+  // libass levels (ass_utils.h): 0 fatal, 1 error, 2 warning, 4 info,
+  // 6 verbose, 7 debug.
   LogLevel impLevel = [&level] {
     switch (level) {
       case 0:
         return LogLevel::Fatal;
       case 1:
+        return LogLevel::Error;
       case 2:
       case 3:
-        return LogLevel::Error;
-      case 4:
         return LogLevel::Warning;
+      case 4:
       case 5:
         return LogLevel::Info;
       case 6:
@@ -151,6 +156,7 @@ void SubtitleRenderTrack::Render() {
     }
   }
 
+  DrawnImages += SubtitleGlyphs.size();
   if (!SubtitleGlyphs.empty()) {
     Renderer->SetBlendMode(RendererBlendMode::Premultiplied);
     for (const auto& subtitleGlyph : SubtitleGlyphs) {
@@ -166,16 +172,43 @@ void SubtitleRenderer::InitSystem() {
     AssLibrary.reset(ass_library_init());
     ass_set_message_cb(AssLibrary.get(), AssMsgHandler, nullptr);
     ass_set_extract_fonts(AssLibrary.get(), 1);
-
-    for (const auto& dir : SubtitleFontsDir) {
-      ass_set_fonts_dir(AssLibrary.get(), dir.c_str());
-    }
   }
   if (!AssLibrary) {
     ImpLog(LogLevel::Error, LogChannel::Subtitle,
            "Failed to initialize ass renderer\n");
     throw std::runtime_error("Failed to initialize libass\n");
   }
+}
+
+// The profile's font folders, added to the library once. (A fonts dir set
+// with ass_set_fonts_dir is read again, and kept again, by every
+// ass_set_fonts call, so each movie with subtitles added another copy.)
+void SubtitleRenderer::LoadFonts() {
+  static bool loaded = false;
+  if (loaded) return;
+  loaded = true;
+  size_t count = 0, bytes = 0;
+  for (const auto& dir : SubtitleFontsDir) {
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+      const std::string name = entry.path().filename().string();
+      if (name.empty() || name[0] == '.' || !entry.is_regular_file(ec)) {
+        continue;
+      }
+      auto data = ReadWholeFile(entry.path().string());
+      if (!data || data->empty()) {
+        ImpLog(LogLevel::Warning, LogChannel::Subtitle,
+               "Failed to read subtitle font {}\n", entry.path().string());
+        continue;
+      }
+      ass_add_font(AssLibrary.get(), name.c_str(), data->data(),
+                   static_cast<int>(data->size()));
+      count++;
+      bytes += data->size();
+    }
+  }
+  ImpLog(LogLevel::Info, LogChannel::Subtitle,
+         "Loaded {} subtitle fonts ({} MB)\n", count, bytes >> 20);
 }
 
 SubtitleRenderer::SubtitleRenderer(SubtitlePlayer& player, float width,
@@ -192,8 +225,15 @@ SubtitleRenderer::SubtitleRenderer(SubtitlePlayer& player, float width,
 
   ass_set_frame_size(AssRenderer.get(), static_cast<int>(Width),
                      static_cast<int>(Height));
-  ass_set_fonts(AssRenderer.get(), NULL, "sans-serif",
-                ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
+  LoadFonts();
+#ifdef __EMSCRIPTEN__
+  // No system fonts in the browser; only the profile's font folders.
+  constexpr ASS_DefaultFontProvider fontProvider = ASS_FONTPROVIDER_NONE;
+#else
+  constexpr ASS_DefaultFontProvider fontProvider = ASS_FONTPROVIDER_AUTODETECT;
+#endif
+  ass_set_fonts(AssRenderer.get(), NULL, SubtitleDefaultFont.c_str(),
+                fontProvider, NULL, 1);
 }
 
 void SubtitleRenderer::AddTrack(int trackId, SubtitleRenderTrack&& track) {

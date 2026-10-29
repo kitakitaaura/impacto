@@ -577,7 +577,9 @@ void FFmpegPlayer::Decode(FFmpegStream<MediaType>& stream) {
             break;
           }
           if (prevSerial != stream.CurrentPacketSerial) {
-            avcodec_flush_buffers(VideoStream->CodecContext.raw());
+            // This stream's own decoder: flushing the video one from the
+            // audio thread raced the video decoder (crashed in Bink 2).
+            avcodec_flush_buffers(stream.CodecContext.raw());
             if constexpr (MediaType == AVMEDIA_TYPE_AUDIO) {
 #ifdef __EMSCRIPTEN__
               AudioStopRequest = true;
@@ -887,6 +889,7 @@ void FFmpegPlayer::Render(float videoAlpha) {
         }
       },
       VideoTexture);
+  Subtitle::DrawnImages = 0;
   if (SubPlayer) SubPlayer->Render();
 }
 
