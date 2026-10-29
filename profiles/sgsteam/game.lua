@@ -17,6 +17,8 @@ include(root.BasePaths.RootProfilesDir .. '/chn/scriptvars.lua');
 -- mask field here (MACROSYS sets SW 4422 = 100), which read as DontDrawText.
 -- Point it at a block no Steam script references so the flags stay 0.
 root.ScriptVars.SW_MESWIN0TYPE = 7000;
+-- Movie subtitles come from LanguageBarrier (vfs.lua).
+root.GameFeatures = root.GameFeatures | GameFeature.Subtitles;
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/vfs.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/sprites.lua');
 include(root.BasePaths.RootProfilesDir .. '/sgsteam/font.lua');

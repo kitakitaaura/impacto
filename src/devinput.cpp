@@ -27,6 +27,7 @@
 #include "ui/ui.h"
 #include "io/vfs.h"
 #include "video/videosystem.h"
+#include "subtitle/subtitlerenderer.h"
 #include "vm/vm.h"
 
 #include <SDL3/SDL_events.h>
@@ -149,7 +150,7 @@ static void ReplyState() {
       "sysmesbox={} "
       "phoneopen={} phonect={} phonemode={} glyphs={} rows={} opaque={} "
       "mastervol={} "
-      "movie0={} movie1={} movieno={} "
+      "movie0={} movie1={} movieno={} subs={} "
       "name=\"{}\" text=\"{}\" wrapped=\"{}\"",
       Frame, ScrWork[SW_GAMESTATE], (int)GetFlag(SF_TITLEMODE),
       ScrWork[SW_SCRIPTID], ScrWork[SW_LINEID], (int)GetFlag(SF_MESSKIP),
@@ -169,7 +170,10 @@ static void ReplyState() {
       (int)(Audio::MasterVolume * 100),
       Video::Players[0] ? (int)Video::Players[0]->IsPlaying : -1,
       Video::Players[1] ? (int)Video::Players[1]->IsPlaying : -1,
-      ScrWork[SW_MOVIE_PLAYNO], page ? GlyphText(page->Name) : "",
+      ScrWork[SW_MOVIE_PLAYNO],
+      Video::Players[0] && Video::Players[0]->IsPlaying ? Subtitle::DrawnImages
+                                                        : 0,
+      page ? GlyphText(page->Name) : "",
       page ? GlyphText(page->Glyphs) : "",
       page ? GlyphText(page->Glyphs, true) : ""));
 }
@@ -360,6 +364,11 @@ void Apply() {
       }
     } else if (cmd == "stopmovie") {
       Video::Players[0]->Stop();
+    } else if (cmd == "seekmovie") {
+      // Seeks channel 0 to MS milliseconds.
+      int64_t ms = 0;
+      in >> ms;
+      Video::Players[0]->Seek(ms * 1000);
     } else if (cmd == "state") {
       ReplyState();
     } else if (cmd == "key" || cmd == "keydown" || cmd == "keyup") {

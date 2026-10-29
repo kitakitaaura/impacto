@@ -44,3 +44,36 @@ root.Vfs = {
         ["movie"] = movieMounts,
     }
 };
+
+-- LanguageBarrier's movie subtitles (patchdef.json "fmv"): the story movies
+-- always, the songs with its default karaokeSubs = "all" (the lq_ files are
+-- its lighter "karaonly" choice).
+local lb = root.BasePaths.RootGamedataDir .. "/sgsteam/languagebarrier";
+local translationSubs = { "prologue01", "prologue02", "imv041" };
+local karaokeSubs = {
+    "imv042", "ending_c", "ending_f", "ending_m", "ending_r", "ending_s",
+    "op", "op2", "ar",
+};
+local movieIds = {};
+for i, name in ipairs(movies) do movieIds[name] = i - 1; end
+local movieSubs = {};
+local function addSubs(names, config)
+    for _, name in ipairs(names) do
+        local path = lb .. "/subs/" .. name .. ".bk2.ass";
+        if hasFile(path) then
+            movieSubs[movieIds[name]] = {
+                { Type = SubtitleType.Ass, Config = config, Path = path },
+            };
+        end
+    end
+end
+addSubs(translationSubs, SubtitleConfigType.Translation);
+addSubs(karaokeSubs, SubtitleConfigType.Karaoke);
+
+root.Subtitle = {
+    SubtitleMappings = { ["movie"] = movieSubs },
+    SubtitleFontsDir = { lb .. "/subs/fonts" },
+    -- For styles naming fonts LB doesn't ship (Arial in the prologue):
+    -- browser builds have no system fonts to fall back on.
+    DefaultFont = "Roboto",
+};

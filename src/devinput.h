@@ -22,6 +22,7 @@ namespace DevInput {
 //   wheel DY      (SDL wheel event; positive scrolls up)
 //   playmovie ID / stopmovie  (movie mount id on video channel 0; replies
 //                               DevMovie ID opened|missing)
+//   seekmovie MS  (seek video channel 0; Bink files only go back to 0)
 //   state         (reply one DevState line: script/line, menus, text...)
 //   shot PATH     (write this frame as a binary PPM, reply DevShot PATH)
 //   echo TEXT     (reply DevEcho TEXT; marks a point in the reply stream)

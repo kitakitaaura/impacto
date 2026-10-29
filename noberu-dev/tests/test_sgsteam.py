@@ -16,7 +16,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from harness import Game, image_stats, read_ppm, save_png  # noqa: E402
+from harness import ROOT, Game, image_stats, read_ppm, save_png  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
@@ -483,6 +483,100 @@ class Movies(GameTest):
         # 120, in both resolutions); it shows the previous frame there.
         self.assertNoNewErrors(g, also_ignore=[
             r"\[Video\] Failed to decode Invalid data found"])
+
+
+# Movie name table (profiles/sgsteam/vfs.lua): ids are list indexes.
+MOVIE_NAMES = [
+    "ar", "ending_c", "ending_f", "ending_m", "ending_r", "ending_s",
+    "imv001", "imv002", "imv003", "imv004", "imv005", "imv006", "imv007",
+    "imv008", "imv009", "imv010", "imv018", "imv023", "imv027", "imv034",
+    "imv034b", "imv036", "imv037", "imv038", "imv039", "imv041", "imv042",
+    "imv043", "imv047", "imv049", "imv050", "imv051", "op", "op2",
+    "prologue01", "prologue02", "timeleapbg", "title",
+]
+LB_SUBS = os.path.join(ROOT, "gamedata", "sgsteam", "languagebarrier", "subs")
+# LanguageBarrier's patchdef.json, karaokeSubs = "all".
+SUBTITLED = ["prologue01", "prologue02", "imv041", "imv042", "ending_c",
+             "ending_f", "ending_m", "ending_r", "ending_s", "op", "op2", "ar"]
+
+
+@unittest.skipUnless(os.path.isdir(LB_SUBS), "needs LanguageBarrier's subs")
+class MovieSubtitles(GameTest):
+    def subs_shown(self, g, timeout):
+        return g.wait_for(lambda s: s["movie0"] and s["subs"] > 0, timeout,
+                          what="subtitles on screen")
+
+    def test_every_subtitled_movie_loads_its_ass_file(self):
+        g = self.start()
+        to_title(g)
+        for name in SUBTITLED + ["imv001"]:
+            before = len(g.log_lines())
+            reply = g.request("playmovie %d" % MOVIE_NAMES.index(name),
+                              "DevMovie")
+            self.assertTrue(reply.endswith("opened"), reply)
+            g.wait_for(lambda s: s["movie0"] == 1, 10, what=name)
+            added = [l for l in g.log_lines()[before:]
+                     if "Added subtitle file" in l]
+            g.send("stopmovie")
+            g.wait_for(lambda s: s["movie0"] == 0, 10)
+            if name not in SUBTITLED:
+                self.assertEqual(added, [], name + " has no subtitles")
+                continue
+            with open(os.path.join(LB_SUBS, name + ".bk2.ass"),
+                      encoding="utf-8-sig") as f:
+                events = sum(l.startswith("Dialogue:") for l in f)
+            self.assertEqual(len(added), 1, name)
+            self.assertIn("%d events" % events, added[0], name)
+        # The 12 LB fonts go into libass once, not once per movie.
+        loaded = [l for l in g.log_lines() if "subtitle fonts" in l]
+        self.assertEqual(len(loaded), 1, loaded)
+        self.assertIn("Loaded 12 subtitle fonts", loaded[0])
+        self.assertNoNewErrors(g)
+
+    def test_prologue_shows_english_line(self):
+        # "Everything is coincidence." from 1.2 s, under the Japanese line,
+        # on a black frame.
+        g = self.start()
+        to_title(g)
+        g.request("playmovie %d" % MOVIE_NAMES.index("prologue01"), "DevMovie")
+        self.subs_shown(g, 10)
+        time.sleep(0.5)
+        width, height, data = read_ppm(g.shot())
+        bright = sum(1 for y in range(int(height * 0.53), int(height * 0.57), 2)
+                     for x in range(int(width * 0.3), int(width * 0.7), 2)
+                     if data[(y * width + x) * 3] > 200)
+        self.assertGreater(bright, 50, "no subtitle text under the movie text")
+        self.assertNoNewErrors(g)
+
+    def test_opening_karaoke_starts_with_the_song(self):
+        # op.bk2.ass's first lines start at 0:25.44; the video runs at 29.97
+        # fps, so they show up around frame 760.
+        g = self.start()
+        to_title(g)
+        g.request("playmovie %d" % MOVIE_NAMES.index("op"), "DevMovie")
+        g.wait_for(lambda s: s["movie0"] == 1, 10, what="opening")
+        time.sleep(5)
+        self.assertEqual(g.state()["subs"], 0, "karaoke before the song")
+        self.subs_shown(g, 40)
+        frame = g.sw(6343)[6343]
+        self.assertTrue(700 <= frame <= 820, "first karaoke at frame %d" % frame)
+        self.assertNotBlank(g.shot())
+        self.assertNoNewErrors(g)
+
+    def test_restarting_a_movie_with_audio_does_not_crash(self):
+        # Looping movies seek back to 0; each decoder thread used to flush
+        # the video codec, racing the video thread (crash in Bink 2).
+        g = self.start()
+        to_title(g)
+        g.request("playmovie %d" % MOVIE_NAMES.index("op"), "DevMovie")
+        for _ in range(5):
+            time.sleep(1.0)
+            g.send("seekmovie 0")
+        time.sleep(1.5)
+        self.assertTrue(g.alive())
+        frame = g.sw(6343)[6343]
+        self.assertLess(frame, 120, "did not go back to the start")
+        self.assertNoNewErrors(g)
 
 
 @unittest.skipUnless(os.environ.get("NOBERU_LONG"), "set NOBERU_LONG=1")
