@@ -33,7 +33,7 @@
   ],
   "features": {
     "movies": {
-      "description": "Decoder-only FFmpeg (Bink 2) and avcpp for the threaded build's movie player",
+      "description": "Decoder-only FFmpeg (Bink 2), avcpp and libass for the threaded build's movie player",
       "dependencies": [
         {
           "name": "ffmpeg",
@@ -48,7 +48,8 @@
         {
           "name": "avcpp",
           "default-features": false
-        }
+        },
+        "libass"
       ]
     }
   }

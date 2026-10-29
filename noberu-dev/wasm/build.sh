@@ -1,7 +1,8 @@
 #!/bin/sh
 # Build impacto for the browser (noberu web). Output: noberu-dev/wasm/out/
 #   noberu-dev/wasm/build.sh            # configure + build
-#   THREADS=1 noberu-dev/wasm/build.sh  # pthreads + FFmpeg movies -> out-mt/
+#   THREADS=1 noberu-dev/wasm/build.sh  # pthreads + FFmpeg movies + libass
+#                                       # subtitles -> out-mt/
 #                                       # (needs a cross-origin isolated page)
 # Needs ~/emsdk and the wasm deps (vcpkg install --triplet wasm32-emscripten-noberu,
 # run automatically by the configure step through the manifest in this folder).
@@ -18,13 +19,15 @@ if [ "${THREADS:-0}" = 1 ]; then
   OUT="$WASM/out-mt"
   set -- -DVCPKG_TARGET_TRIPLET=wasm32-emscripten-noberu-mt \
     -DVCPKG_INSTALLED_DIR="$WASM/vcpkg_installed-mt" \
-    -DVCPKG_MANIFEST_FEATURES=movies -DIMPACTO_HAVE_THREADS=ON
+    -DVCPKG_MANIFEST_FEATURES=movies -DIMPACTO_HAVE_THREADS=ON \
+    -UIMPACTO_DISABLE_LIBASS
 else
   BUILD="$ROOT/impacto-build/wasm"
   OUT="$WASM/out"
   set -- -DVCPKG_TARGET_TRIPLET=wasm32-emscripten-noberu \
     -DVCPKG_INSTALLED_DIR="$WASM/vcpkg_installed" \
-    -DIMPACTO_DISABLE_FFMPEG=ON -DIMPACTO_HAVE_THREADS=OFF
+    -DIMPACTO_DISABLE_FFMPEG=ON -DIMPACTO_HAVE_THREADS=OFF \
+    -DIMPACTO_DISABLE_LIBASS=ON
 fi
 cmake -S "$ROOT" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
@@ -32,7 +35,7 @@ cmake -S "$ROOT" -B "$BUILD" -G Ninja \
   -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
   -DVCPKG_OVERLAY_TRIPLETS="$WASM/triplets" \
   -DVCPKG_MANIFEST_DIR="$WASM" \
-  -DIMPACTO_DISABLE_LIBASS=ON -DIMPACTO_DISABLE_IMGUI=ON \
+  -DIMPACTO_DISABLE_IMGUI=ON \
   -DIMPACTO_WARNINGS=OFF "$@"
 cmake --build "$BUILD" --target impacto
 mkdir -p "$OUT"

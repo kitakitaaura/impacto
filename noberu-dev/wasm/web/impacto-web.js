@@ -14,7 +14,10 @@
       const lower = rel.toLowerCase();
       const wanted = (lower.startsWith('usrdir/') && lower.endsWith('.mpk')) ||
         ((lower.startsWith('usrdir/movie/1920x1080/') ||
-          lower.startsWith('languagebarrier/videos/1080p/')) && lower.endsWith('.bk2'));
+          lower.startsWith('languagebarrier/videos/1080p/')) && lower.endsWith('.bk2')) ||
+        // LanguageBarrier's movie subtitles and their fonts.
+        (lower.startsWith('languagebarrier/subs/') && lower.endsWith('.ass')) ||
+        (lower.startsWith('languagebarrier/subs/fonts/') && /\.(ttf|otf|ttc)$/.test(lower));
       if (!wanted) continue;
       files.set('/gamedata/sgsteam/' + rel, file);
     }

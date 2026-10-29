@@ -15,16 +15,19 @@ const port = Number(process.argv[2] || 8765);
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
                 '.json': 'application/json', '.data': 'application/octet-stream' };
 
-// The archives, plus the 1080p movies and the English patch's replacements.
+// The archives, plus the 1080p movies and the English patch's replacements,
+// movie subtitles and subtitle fonts.
 function listArchives() {
-  const list = (sub, ext) => {
+  const list = (sub, ...exts) => {
     const dir = path.join(game, sub);
     if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith(ext))
+    return fs.readdirSync(dir).filter((f) => exts.some((e) => f.toLowerCase().endsWith(e)))
       .map((f) => ({ path: sub + '/' + f, size: fs.statSync(path.join(dir, f)).size }));
   };
   return [...list('USRDIR', '.mpk'), ...list('USRDIR/movie/1920x1080', '.bk2'),
-          ...list('languagebarrier/videos/1080p', '.bk2')];
+          ...list('languagebarrier/videos/1080p', '.bk2'),
+          ...list('languagebarrier/subs', '.ass'),
+          ...list('languagebarrier/subs/fonts', '.ttf', '.otf', '.ttc')];
 }
 
 http.createServer((req, res) => {
