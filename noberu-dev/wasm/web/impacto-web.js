@@ -15,8 +15,9 @@
       const wanted = (lower.startsWith('usrdir/') && lower.endsWith('.mpk')) ||
         ((lower.startsWith('usrdir/movie/1920x1080/') ||
           lower.startsWith('languagebarrier/videos/1080p/')) && lower.endsWith('.bk2')) ||
-        // LanguageBarrier's movie subtitles and their fonts.
+        // LanguageBarrier's movie subtitles, their fonts and movie audio.
         (lower.startsWith('languagebarrier/subs/') && lower.endsWith('.ass')) ||
+        (lower.startsWith('languagebarrier/audio/') && lower.endsWith('.ogg')) ||
         (lower.startsWith('languagebarrier/subs/fonts/') && /\.(ttf|otf|ttc)$/.test(lower));
       if (!wanted) continue;
       files.set('/gamedata/sgsteam/' + rel, file);

@@ -62,7 +62,9 @@ elseif(VCPKG_TARGET_IS_EMSCRIPTEN)
     # beyond the browser's worker pool, which only start once the main thread
     # yields - a deadlock. impacto's player already decodes on its own thread.
     string(APPEND OPTIONS " --target-os=none --arch=x86_32 --disable-asm --disable-inline-asm --disable-pthreads")
-    string(APPEND OPTIONS " --disable-everything --enable-demuxer=bink --enable-decoder=bink,bink2,binkaudio_rdft,binkaudio_dct")
+    # Bink movies, plus Ogg Vorbis for replacement movie audio (LanguageBarrier).
+    string(APPEND OPTIONS " --disable-everything --enable-demuxer=bink,ogg --enable-parser=vorbis")
+    string(APPEND OPTIONS " --enable-decoder=bink,bink2,binkaudio_rdft,binkaudio_dct,vorbis")
 endif()
 
 if(VCPKG_TARGET_IS_OSX)
