@@ -36,6 +36,9 @@ void Configure() {
     Pop();
   }
 
+  MovieAudio = TryGetMember<decltype(MovieAudio)>("MovieAudio")
+                   .value_or(decltype(MovieAudio){});
+
   Pop();
 }
 }  // namespace Vfs

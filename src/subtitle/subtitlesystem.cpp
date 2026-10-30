@@ -12,9 +12,6 @@
 #include "../profile/subtitle.h"
 #include "../log.h"
 #include "../io/physicalfilestream.h"
-#ifdef __EMSCRIPTEN__
-#include "../io/webfilestream.h"
-#endif
 
 namespace Impacto::Subtitle {
 using namespace Profile::Subtitle;
@@ -105,13 +102,7 @@ void SubtitlePlayer::AddTrackFile(
 
 std::optional<std::vector<char>> ReadWholeFile(std::string const& path) {
   Io::Stream* stream{};
-  IoError err = IoError_NotFound;
-#ifdef __EMSCRIPTEN__
-  err = Io::WebFileStream::Create(path, &stream);
-  if (err == IoError_NotFound)
-#endif
-    err = Io::PhysicalFileStream::Create(path, &stream);
-  if (err != IoError_OK) return std::nullopt;
+  if (Io::OpenLooseFile(path, &stream) != IoError_OK) return std::nullopt;
   std::vector<char> data(stream->Meta.Size);
   const int64_t read = stream->Read(data.data(), data.size());
   delete stream;

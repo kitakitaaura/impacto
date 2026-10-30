@@ -47,6 +47,10 @@ class FFmpegPlayer : public VideoPlayer {
   void Update(float dt) override;
   void Render(float videoAlpha) override;
 
+  // DevInput: replacement audio in use; the audio clock (-1 without audio).
+  bool AudioIsReplaced() const { return AudioReplaced; }
+  int64_t AudioClockMs();
+
   void Read();
   template <AVMediaType avType>
   void Decode(FFmpegStream<avType>& stream);
@@ -76,6 +80,8 @@ class FFmpegPlayer : public VideoPlayer {
   void OpenCodec(std::optional<FFmpegStream<MediaType>>& streamOpt,
                  av::Stream&& avStream, int streamId);
 
+  bool OpenReplacementAudio(av::Stream& audioStream, int& audioStreamId);
+  void FeedReplacementAudio();
   void UpdateSubtitles();
   void ProcessVideoFrame(Frame_t<AVMEDIA_TYPE_VIDEO>& avFrame);
   AVBufferRef* HwDecoderInit(const AVCodec* codec);
@@ -88,6 +94,16 @@ class FFmpegPlayer : public VideoPlayer {
 
   std::unique_ptr<Io::Stream> StreamPtr;
   av::FormatContext FormatContext;
+
+  // Replacement audio (Profile::Vfs::MovieAudio): a second input whose
+  // packets the reader thread feeds to the audio queue, never blocking on
+  // it; the movie's own audio track is discarded.
+  std::unique_ptr<Io::Stream> AudioStreamPtr;
+  FFmpegFileIO AudioIoContext;
+  av::FormatContext AudioFormatContext;
+  bool AudioReplaced = false;
+  bool AudioReplacementEOF = false;
+  std::optional<AVPacketItem> PendingAudioPacket;
   AVPixelFormat HwVideoPixelFormat = AV_PIX_FMT_NONE;
   AVPixelFormat SwVideoPixelFormat = AV_PIX_FMT_NONE;
   FFmpegFileIO IoContext;

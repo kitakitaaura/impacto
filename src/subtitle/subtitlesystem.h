@@ -51,8 +51,7 @@ class SubtitlePlayer {
 };
 
 void SubtitleInit();
-// Whole loose file (subtitle scripts, fonts); browser builds read the
-// page's File, the filesystem only has empty stand-ins.
+// Whole loose file (subtitle scripts, fonts), see Io::OpenLooseFile.
 std::optional<std::vector<char>> ReadWholeFile(std::string const& path);
 
 template <typename Track, typename... TrackArgs>

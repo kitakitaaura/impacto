@@ -1,6 +1,9 @@
 #include "physicalfilestream.h"
 #include "../log.h"
 #include "io.h"
+#ifdef __EMSCRIPTEN__
+#include "webfilestream.h"
+#endif
 
 #include <cstring>
 #include <algorithm>
@@ -191,6 +194,14 @@ int64_t PhysicalFileStream::Write(const void* buffer, int64_t sz, size_t cnt) {
   Position += written;
   Meta.Size = std::max(Position, Meta.Size);
   return written;
+}
+
+IoError OpenLooseFile(std::string const& path, Stream** out) {
+#ifdef __EMSCRIPTEN__
+  IoError err = WebFileStream::Create(path, out);
+  if (err != IoError_NotFound) return err;
+#endif
+  return PhysicalFileStream::Create(path, out);
 }
 
 }  // namespace Io

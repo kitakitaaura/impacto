@@ -68,5 +68,9 @@ class PhysicalFileStream : public Stream {
   }
 };
 
+// Opens a loose game file for reading. Browser builds read the page's File
+// when it has one (their filesystem only holds empty stand-ins).
+IoError OpenLooseFile(std::string const& path, Stream** out);
+
 }  // namespace Io
 }  // namespace Impacto

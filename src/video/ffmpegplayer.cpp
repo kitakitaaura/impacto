@@ -33,6 +33,8 @@ extern "C" {
 #endif
 #include "../profile/scriptvars.h"
 #include "../profile/subtitle.h"
+#include "../profile/vfs.h"
+#include "../io/physicalfilestream.h"
 #ifndef IMPACTO_DISABLE_LIBASS
 #include "../subtitle/ass/subtitlerenderer.h"
 #endif
@@ -334,13 +336,14 @@ void FFmpegPlayer::Play(Io::Stream* stream, bool looping, bool alpha) {
   int videoStreamId = AVERROR_STREAM_NOT_FOUND;
   av::Stream audioStream;
   int audioStreamId = AVERROR_STREAM_NOT_FOUND;
+  AudioReplaced = !NoAudio && OpenReplacementAudio(audioStream, audioStreamId);
   std::vector<std::pair<av::Stream, int>> embeddedSubStreams;
   for (size_t i = 0; i < FormatContext.streamsCount(); ++i) {
     auto st = FormatContext.stream(i);
     if (st.isVideo()) {
       videoStreamId = (int)i;
       videoStream = st;
-    } else if (st.isAudio() && !NoAudio) {
+    } else if (st.isAudio() && !NoAudio && !AudioReplaced) {
       audioStreamId = (int)i;
       audioStream = st;
     } else if (st.isSubtitle()) {
@@ -386,6 +389,83 @@ void FFmpegPlayer::Play(Io::Stream* stream, bool looping, bool alpha) {
   }
 
   IsPlaying = true;
+}
+
+bool FFmpegPlayer::OpenReplacementAudio(av::Stream& audioStream,
+                                        int& audioStreamId) {
+  const auto mount =
+      Profile::Vfs::MovieAudio.find(StreamPtr->Meta.ArchiveMountPoint);
+  if (mount == Profile::Vfs::MovieAudio.end()) return false;
+  const auto entry = mount->second.find(StreamPtr->Meta.Id);
+  if (entry == mount->second.end()) return false;
+
+  Io::Stream* stream{};
+  if (Io::OpenLooseFile(entry->second, &stream) != IoError_OK) {
+    ImpLog(LogLevel::Warning, LogChannel::Video,
+           "Replacement audio {:s} not found, keeping the movie's own\n",
+           entry->second);
+    return false;
+  }
+  AudioStreamPtr.reset(stream);
+  std::error_code ec;
+  AudioIoContext = FFmpegFileIO{stream};
+  AudioFormatContext.openInput(&AudioIoContext, ec, FILESTREAMBUFFERSZ);
+  if (!ec) AudioFormatContext.findStreamInfo(ec);
+  for (size_t i = 0; !ec && i < AudioFormatContext.streamsCount(); ++i) {
+    auto st = AudioFormatContext.stream(i);
+    if (st.isAudio() && audioStreamId == AVERROR_STREAM_NOT_FOUND) {
+      audioStreamId = (int)i;
+      audioStream = st;
+    } else {
+      st.raw()->discard = AVDISCARD_ALL;
+    }
+  }
+  if (ec || audioStreamId == AVERROR_STREAM_NOT_FOUND) {
+    ImpLog(LogLevel::Error, LogChannel::Video,
+           "Cannot play replacement audio {:s}: {:s}\n", entry->second,
+           ec ? ec.message() : "no audio stream");
+    AudioFormatContext.close();
+    AudioStreamPtr.reset();
+    audioStream = {};
+    audioStreamId = AVERROR_STREAM_NOT_FOUND;
+    return false;
+  }
+  ImpLog(LogLevel::Info, LogChannel::Video, "Audio replaced by {:s}\n",
+         entry->second);
+  AudioReplacementEOF = false;
+  PendingAudioPacket.reset();
+  return true;
+}
+
+int64_t FFmpegPlayer::AudioClockMs() {
+  if (!AudioStream || !AudioPlayer) return -1;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             AudioPlayer->GetClock().Get())
+      .count();
+}
+
+void FFmpegPlayer::FeedReplacementAudio() {
+  if (!AudioStream) return;
+  while (PendingAudioPacket || !AudioReplacementEOF) {
+    if (!PendingAudioPacket) {
+      std::error_code ec;
+      AVPacketItem item;
+      item.Packet = AudioFormatContext.readPacket(ec);
+      if (!item.Packet) {
+        item.Serial = INT32_MIN;
+        AudioReplacementEOF = true;
+      } else if (item.Packet.streamIndex() != AudioStream->AvStream.index()) {
+        continue;
+      } else {
+        item.Serial = AudioStream->PacketQueueSerial;
+      }
+      PendingAudioPacket = std::move(item);
+    }
+    // Takes the packet only when there is room; otherwise try again later.
+    if (!AudioStream->PacketQueue.try_enqueue(std::move(*PendingAudioPacket)))
+      return;
+    PendingAudioPacket.reset();
+  }
 }
 
 void FFmpegPlayer::InitSubtitles(
@@ -478,6 +558,12 @@ void FFmpegPlayer::HandleSeekRequest() {
     AudioStream->FlushFrameQueue();
   }
 
+  if (AudioReplaced) {
+    AudioFormatContext.seek(av::Timestamp(SeekPosition, av::TimeBaseQ), ec);
+    PendingAudioPacket.reset();
+    AudioReplacementEOF = false;
+  }
+
   FrameTimer = Clock::MonotonicTime{};
   PreviousFrameTimestamp = std::nullopt;
   SeekRequest = false;
@@ -490,6 +576,8 @@ void FFmpegPlayer::Read() {
       HandleSeekRequest();
     }
 
+    if (AudioReplaced) FeedReplacementAudio();
+
     AVPacketItem item;
     if (ReaderEOF) {
       continue;
@@ -500,7 +588,7 @@ void FFmpegPlayer::Read() {
       ImpLog(LogLevel::Error, LogChannel::Video, "Uh oh {:s}\n", ec.message());
     }
     if (item.Packet) {
-      if (AudioStream &&
+      if (AudioStream && !AudioReplaced &&
           item.Packet.streamIndex() == AudioStream->AvStream.index()) {
         item.Serial = AudioStream->PacketQueueSerial;
         while (!AudioStream->PacketQueue.wait_enqueue_timed(std::move(item),
@@ -512,6 +600,7 @@ void FFmpegPlayer::Read() {
         while (!VideoStream->PacketQueue.wait_enqueue_timed(std::move(item),
                                                             300)) {
           if (AbortRequest) break;
+          if (AudioReplaced) FeedReplacementAudio();
         };
       } else {
         for (auto& subtitleStream : EmbeddedSubtitleStreams) {
@@ -528,7 +617,7 @@ void FFmpegPlayer::Read() {
       ImpLog(LogLevel::Debug, LogChannel::Video, "EOF!\n");
       ReaderEOF = true;
       item.Serial = INT32_MIN;
-      if (AudioStream) {
+      if (AudioStream && !AudioReplaced) {
         while (!AudioStream->PacketQueue.wait_enqueue_timed(std::move(item),
                                                             300)) {
           if (AbortRequest) break;
@@ -697,6 +786,12 @@ void FFmpegPlayer::Stop() {
     PreviousFrameTimestamp = {};
     FormatContext.close();
     StreamPtr.reset();
+    if (AudioReplaced) {
+      AudioFormatContext.close();
+      AudioStreamPtr.reset();
+      PendingAudioPacket.reset();
+      AudioReplaced = false;
+    }
     std::visit(
         [this](auto& videoText) {
           if constexpr (!std::is_same_v<std::decay_t<decltype(videoText)>,
