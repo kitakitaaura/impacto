@@ -16,6 +16,8 @@
 namespace Impacto::Subtitle {
 using namespace Profile::Subtitle;
 
+static void SubstituteFonts(std::vector<char>& script);
+
 void SubtitleInit() {
   switch (UserConfig::AdvancedSettings.SubtitleAssBackend) {
 #ifndef IMPACTO_DISABLE_LIBASS
@@ -97,7 +99,29 @@ void SubtitlePlayer::AddTrackFile(
            "Failed to read subtitle file {}", path);
     return;
   }
+  if (type == SubtitleType::Ass) SubstituteFonts(*data);
   backend->AddTrackFile(trackId, *data);
+}
+
+// Profile FontSubstitutes in an ASS script: style font fields
+// (",Name," and the vertical ",@Name,") and \fn override tags.
+static void SubstituteFonts(std::vector<char>& script) {
+  if (SubtitleFontSubstitutes.empty()) return;
+  std::string text(script.begin(), script.end());
+  const auto replaceAll = [&text](std::string const& from,
+                                  std::string const& to) {
+    for (size_t pos = text.find(from); pos != std::string::npos;
+         pos = text.find(from, pos + to.size())) {
+      text.replace(pos, from.size(), to);
+    }
+  };
+  for (const auto& [from, to] : SubtitleFontSubstitutes) {
+    for (const char* prefix : {",", ",@", "\\fn", "\\fn@"}) {
+      const char* suffix = prefix[0] == ',' ? "," : "";
+      replaceAll(prefix + from + suffix, prefix + to + suffix);
+    }
+  }
+  script.assign(text.begin(), text.end());
 }
 
 std::optional<std::vector<char>> ReadWholeFile(std::string const& path) {

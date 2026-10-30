@@ -71,6 +71,11 @@ inline std::vector<std::string> SubtitleFontsDir;
 // Family libass falls back to when a style's font is missing (browser builds
 // have no system fonts at all).
 inline std::string SubtitleDefaultFont = "sans-serif";
+// Font families swapped in ASS scripts before loading (missing -> available),
+// for fonts a script names but nothing ships; the default family above may
+// lack the glyphs (CJK lyrics).
+inline ankerl::unordered_dense::map<std::string, std::string>
+    SubtitleFontSubstitutes;
 
 void Configure();
 }  // namespace Impacto::Profile::Subtitle
