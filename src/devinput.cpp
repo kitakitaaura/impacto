@@ -27,6 +27,9 @@
 #include "ui/ui.h"
 #include "io/vfs.h"
 #include "video/videosystem.h"
+#ifndef IMPACTO_DISABLE_FFMPEG
+#include "video/ffmpegplayer.h"
+#endif
 #include "subtitle/subtitlerenderer.h"
 #include "vm/vm.h"
 
@@ -142,6 +145,17 @@ static void ReplyState() {
   const bool sghd =
       Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD;
   const auto* title = dynamic_cast<const UI::SGHD::TitleMenu*>(UI::TitleMenuPtr);
+  // Channel 0's movie audio: replaced track in use, audio clock in ms.
+  int movieAudioReplaced = 0;
+  int64_t movieAudioClock = -1;
+#ifndef IMPACTO_DISABLE_FFMPEG
+  if (Video::Players[0] && Video::Players[0]->IsPlaying) {
+    if (auto* player = dynamic_cast<Video::FFmpegPlayer*>(Video::Players[0])) {
+      movieAudioReplaced = player->AudioIsReplaced();
+      movieAudioClock = player->AudioClockMs();
+    }
+  }
+#endif
   Reply(fmt::format(
       "DevState frame={} gamestate={} titlemode={} script={} line={} "
       "skip={} allskip={} auto={} select={} uihidden={} nolog={} resuming={} "
@@ -150,7 +164,7 @@ static void ReplyState() {
       "sysmesbox={} "
       "phoneopen={} phonect={} phonemode={} glyphs={} rows={} opaque={} "
       "mastervol={} "
-      "movie0={} movie1={} movieno={} subs={} "
+      "movie0={} movie1={} movieno={} subs={} maudio={} aclock={} "
       "name=\"{}\" text=\"{}\" wrapped=\"{}\"",
       Frame, ScrWork[SW_GAMESTATE], (int)GetFlag(SF_TITLEMODE),
       ScrWork[SW_SCRIPTID], ScrWork[SW_LINEID], (int)GetFlag(SF_MESSKIP),
@@ -173,6 +187,7 @@ static void ReplyState() {
       ScrWork[SW_MOVIE_PLAYNO],
       Video::Players[0] && Video::Players[0]->IsPlaying ? Subtitle::DrawnImages
                                                         : 0,
+      movieAudioReplaced, movieAudioClock,
       page ? GlyphText(page->Name) : "",
       page ? GlyphText(page->Glyphs) : "",
       page ? GlyphText(page->Glyphs, true) : ""));

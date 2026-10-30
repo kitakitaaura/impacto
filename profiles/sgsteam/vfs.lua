@@ -28,6 +28,26 @@ if hasFile(patched .. "/imv041.bk2") then
     table.insert(movieMounts, { Path = patched, Names = movies });
 end
 
+-- LanguageBarrier's better movie audio (patchdef.json hqFmvAudio, on by
+-- default): one track per movie, played instead of the movie's own.
+local lbAudio = root.BasePaths.RootGamedataDir .. "/sgsteam/languagebarrier/audio";
+local audioReplacements = {
+    op2 = "geniac_hq_cut.ogg", imv041 = "imv041.ogg", imv042 = "imv042.ogg",
+};
+for _, name in ipairs({
+    "imv002", "imv006", "imv007", "imv008", "imv009", "imv010", "imv018",
+    "imv023", "imv027", "imv034", "imv034b", "imv036", "imv037", "imv039",
+}) do
+    audioReplacements[name] = "divergence.ogg";
+end
+local movieAudio = {};
+for i, name in ipairs(movies) do
+    local file = audioReplacements[name];
+    if file and hasFile(lbAudio .. "/" .. file) then
+        movieAudio[i - 1] = lbAudio .. "/" .. file;
+    end
+end
+
 root.Vfs = {
     Mounts = {
         ["script"] = {dir .. "/script.mpk"},
@@ -42,7 +62,8 @@ root.Vfs = {
         ["mask"] = {dir .. "/mask.mpk"},
         -- Loose Bink 2 files; portfiles/ffmpeg adds the Bink 2 decoder.
         ["movie"] = movieMounts,
-    }
+    },
+    MovieAudio = { ["movie"] = movieAudio },
 };
 
 -- LanguageBarrier's movie subtitles (patchdef.json "fmv"): the story movies

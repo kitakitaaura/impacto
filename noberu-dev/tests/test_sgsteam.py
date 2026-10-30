@@ -579,6 +579,75 @@ class MovieSubtitles(GameTest):
         self.assertNoNewErrors(g)
 
 
+LB_AUDIO = os.path.join(ROOT, "gamedata", "sgsteam", "languagebarrier", "audio")
+
+
+@unittest.skipUnless(os.path.isdir(LB_AUDIO), "needs LanguageBarrier's audio")
+class MovieAudio(GameTest):
+    # Everything here is muted (the harness checks mastervol == 0): these
+    # check the replacement track decodes and keeps time with the picture,
+    # not how it sounds.
+    FRAME_MS = 1001 / 30  # the movies run at 29.97 fps
+
+    def play(self, g, name):
+        reply = g.request("playmovie %d" % MOVIE_NAMES.index(name), "DevMovie")
+        self.assertTrue(reply.endswith("opened"), reply)
+        return g.wait_for(lambda s: s["movie0"] == 1 and s["aclock"] > 0, 10,
+                          what=name + " audio")
+
+    def assertInSync(self, g, name, seconds=3):
+        # The audio clock (master) and the shown frame agree, and both move.
+        first = g.state()
+        time.sleep(seconds)
+        state = g.state()
+        frame = g.sw(6343)[6343]
+        self.assertGreater(state["aclock"] - first["aclock"], seconds * 800,
+                           name + ": audio clock stalled")
+        self.assertLess(abs(state["aclock"] - frame * self.FRAME_MS), 250,
+                        "%s: audio %d ms vs frame %d" %
+                        (name, state["aclock"], frame))
+        return state
+
+    def test_lb_tracks_replace_movie_audio(self):
+        g = self.start()
+        to_title(g)
+        for name, track in [("op2", "geniac_hq_cut.ogg"),
+                            ("imv041", "imv041.ogg"),
+                            ("imv002", "divergence.ogg")]:
+            before = len(g.log_lines())
+            state = self.play(g, name)
+            self.assertEqual(state["maudio"], 1, name)
+            self.assertInSync(g, name)
+            replaced = [l for l in g.log_lines()[before:]
+                        if "Audio replaced by" in l]
+            self.assertEqual(len(replaced), 1, name)
+            self.assertTrue(replaced[0].endswith(track), replaced[0])
+            g.send("stopmovie")
+            g.wait_for(lambda s: s["movie0"] == 0, 10)
+        self.assertNoNewErrors(g)
+
+    def test_other_movies_keep_their_own_audio(self):
+        g = self.start()
+        to_title(g)
+        state = self.play(g, "op")
+        self.assertEqual(state["maudio"], 0)
+        self.assertInSync(g, "op")
+        self.assertNoNewErrors(g)
+
+    def test_short_clip_ends_with_its_video(self):
+        # divergence.ogg runs 8.0 s, the imv clips it replaces 7.04 s.
+        g = self.start()
+        to_title(g)
+        start = time.time()
+        self.play(g, "imv009")
+        g.wait_for(lambda s: s["movie0"] == 0, 15, what="imv009 end")
+        length = time.time() - start
+        self.assertGreater(length, 6.5, "cut short")
+        self.assertLess(length, 7.6, "played to the audio's end")
+        self.assertTrue(g.alive())
+        self.assertNoNewErrors(g)
+
+
 @unittest.skipUnless(os.environ.get("NOBERU_LONG"), "set NOBERU_LONG=1")
 class LongSkip(GameTest):
     def test_skip_far_without_script_errors(self):
