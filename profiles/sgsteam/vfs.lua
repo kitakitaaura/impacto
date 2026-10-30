@@ -97,4 +97,11 @@ root.Subtitle = {
     -- For styles naming fonts LB doesn't ship (Arial in the prologue):
     -- browser builds have no system fonts to fall back on.
     DefaultFont = "Roboto",
+    -- Japanese fonts LB's karaoke names but doesn't ship (op2, endings);
+    -- Roboto has no kana or kanji, so they go to its bundled ones.
+    FontSubstitutes = {
+        ["和田研細丸ゴシック20044"] = "東風ゴシック",
+        ["瀬戸フォント-SP"] = "東風ゴシック",
+        ["ＤＦ龍門石碑体W9"] = "小塚明朝 Pr6N B",
+    },
 };

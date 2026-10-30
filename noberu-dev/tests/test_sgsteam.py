@@ -563,6 +563,21 @@ class MovieSubtitles(GameTest):
         self.assertNotBlank(g.shot())
         self.assertNoNewErrors(g)
 
+    def test_missing_japanese_fonts_use_bundled_ones(self):
+        # op2's kanji lines (from 0:16.39) name 和田研細丸ゴシック20044, which LB
+        # doesn't ship; the profile swaps in its 東風ゴシック. Browser builds
+        # have no system fonts to cover the kana/kanji otherwise.
+        g = self.start()
+        to_title(g)
+        g.request("playmovie %d" % MOVIE_NAMES.index("op2"), "DevMovie")
+        g.wait_for(lambda s: g.sw(6343)[6343] >= 17.5 * 30, 40,
+                   what="op2 at 17.5 s")
+        self.assertGreater(g.state()["subs"], 0)
+        fontselect = [l for l in g.log_lines() if "fontselect" in l]
+        self.assertTrue(any("(東風ゴシック" in l for l in fontselect), fontselect)
+        self.assertFalse([l for l in fontselect if "和田研" in l])
+        self.assertNoNewErrors(g)
+
     def test_restarting_a_movie_with_audio_does_not_crash(self):
         # Looping movies seek back to 0; each decoder thread used to flush
         # the video codec, racing the video thread (crash in Bink 2).
