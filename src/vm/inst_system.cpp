@@ -26,6 +26,7 @@
 #include "../data/achievementsystem.h"
 #include "../ui/ui.h"
 #include "../ui/gamespecific.h"
+#include "../game.h"
 #include "../voicetable.h"
 #include "../text/dialoguepage.h"
 
@@ -701,7 +702,9 @@ VmInstruction(InstTerminate) {
   StartInstruction;
 
   ImpLog(LogLevel::Info, LogChannel::VM, "VM requested shutdown!\n");
-  Window->Shutdown();
+  // The whole shutdown, as when the window is closed: the window alone
+  // exit()s with the work queue's threads still running (std::terminate).
+  Game::Shutdown();
   // BlockThread;
   // ResetInstruction;
 }
@@ -746,7 +749,16 @@ VmInstruction(InstSystemMes) {
     type -= 0x40;
   }
   // bool flag = type > 0xf;
-  if (type > 0x10) {
+  // Steam STEINS;GATE's Exit Game confirm (_STARTUP_WIN.SCX) runs a second
+  // box with modes 0x0A-0x11 (modes 0-7 offset by 10: init, message,
+  // choices, init2 with an argument, fade in, main, fade out) and reads its
+  // answer from SW_SYSSEL + 1.
+  const bool sghdSecondBox =
+      Profile::Vm::GameInstructionSet == InstructionSet::SGHD &&
+      type >= 0x0A && type <= 0x11;
+  if (sghdSecondBox) {
+    type -= 0x0A;
+  } else if (type > 0x10) {
     type -= 0x10;
   }
 
@@ -809,6 +821,8 @@ VmInstruction(InstSystemMes) {
                    Interface::PADinputMouseWentDown & Interface::PAD1A)) {
         ResetInstruction;
         BlockThread;
+      } else if (sghdSecondBox) {
+        ScrWork[SW_SYSSEL + 1] = ScrWork[SW_SYSSEL];
       }
     } break;
     case 6: {  // SystemMesFadeIn
