@@ -148,6 +148,13 @@ static void ReplyState() {
   const bool sghd =
       Profile::Vm::GameInstructionSet == Vm::InstructionSet::SGHD;
   const auto* title = dynamic_cast<const UI::SGHD::TitleMenu*>(UI::TitleMenuPtr);
+  // Filled quick save slots (the game's own autosaves included).
+  int quickSaves = 0;
+  if (SaveSystem::Implementation) {
+    for (int i = 0; i < SaveSystem::MaxSaveEntries; i++) {
+      quickSaves += SaveSystem::GetSaveStatus(SaveSystem::SaveType::Quick, i) != 0;
+    }
+  }
   // Channel 0's movie audio: replaced track in use, audio clock in ms.
   int movieAudioReplaced = 0;
   int64_t movieAudioClock = -1;
@@ -168,7 +175,7 @@ static void ReplyState() {
       "phoneopen={} phonect={} phonemode={} glyphs={} rows={} opaque={} "
       "mastervol={} "
       "movie0={} movie1={} movieno={} subs={} maudio={} aclock={} "
-      "backlogn={} meswin={} backlogtop=\"{}\" "
+      "backlogn={} meswin={} backlogtop=\"{}\" qsaves={} "
       "name=\"{}\" text=\"{}\" wrapped=\"{}\"",
       Frame, ScrWork[SW_GAMESTATE], (int)GetFlag(SF_TITLEMODE),
       ScrWork[SW_SCRIPTID], ScrWork[SW_LINEID], (int)GetFlag(SF_MESSKIP),
@@ -197,6 +204,7 @@ static void ReplyState() {
       UI::BacklogMenuPtr && UI::BacklogMenuPtr->NewestEntryGlyphs()
           ? GlyphText(*UI::BacklogMenuPtr->NewestEntryGlyphs())
           : "",
+      quickSaves,
       page ? GlyphText(page->Name) : "",
       page ? GlyphText(page->Glyphs) : "",
       page ? GlyphText(page->Glyphs, true) : ""));

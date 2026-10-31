@@ -428,6 +428,17 @@ class SaveLoad(GameTest):
         self.assertEqual(state["text"], saved["text"])
         self.assertNoNewErrors(g)
 
+    def test_scene_start_autosaves_into_quick_slots(self):
+        # Every scene opens with AutoSave 0 (10 22 00, 24 in the scripts);
+        # Game.exe's default (setting 1 at 0x470b90) quick saves there. The
+        # prologue's comes right after the movie, so its picture is black.
+        g = self.start()
+        state = new_game(g)
+        self.assertEqual(state["qsaves"], 1)
+        menu_select(g, MENU_QUICKSAVE)
+        g.wait_for(lambda s: s["qsaves"] == 2, 10, what="quick save")
+        self.assertNoNewErrors(g)
+
     def test_quick_save_and_quick_load(self):
         g = self.start(keep_saves=True)
         new_game(g)
