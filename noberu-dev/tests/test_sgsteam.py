@@ -40,6 +40,7 @@ PROLOGUE = [
 # System menu rows, in script order (SW_SYSMENUCNO).
 MENU_QUICKSAVE, MENU_QUICKLOAD, MENU_SAVE = 1, 2, 3
 MENU_TITLE = 9
+MENU_EXIT = 11
 
 MENU_SHOWN, MENU_HIDDEN = 3, 0
 
@@ -319,6 +320,54 @@ class Menus(GameTest):
             g.wait_for(lambda s: s["backlog"] == MENU_HIDDEN and
                        s["sysmenu"] == MENU_HIDDEN, 10, what="backlog closed")
         self.assertNoNewErrors(g)
+
+    def test_backlog_has_the_current_line_and_covers_the_window(self):
+        g = self.start()
+        state = new_game(g)
+        # The line on screen is already the backlog's newest entry (after
+        # the script's own entries, like the "Prologue" heading)...
+        self.assertEqual(state["backlogtop"], state["text"])
+        start = state["backlogn"]
+        for n in range(1, 4):
+            state = next_line(g)
+            self.assertEqual(state["backlogtop"], state["text"])
+            # ...and moving on doesn't add it a second time.
+            self.assertEqual(state["backlogn"], start + n)
+        g.press_until("F2", lambda s: s["backlog"] == MENU_SHOWN, 10,
+                      what="backlog")
+        # The backlog lists lines where the message window is, so the
+        # window fades out with it (the script's SW_SYSSUBMENUALPHA)...
+        g.wait_for(lambda s: s["meswin"] == 0, 5, what="window hidden")
+        tap(g, "Backspace")
+        g.wait_for(lambda s: s["backlog"] == MENU_HIDDEN, 10,
+                   what="backlog closed")
+        # ...and comes back after it.
+        g.wait_for(lambda s: s["meswin"] == 100, 5, what="window back")
+        self.assertEqual(next_line(g)["backlogn"], start + 4)
+        self.assertNoNewErrors(g)
+
+    def test_exit_game_asks_cancels_and_quits(self):
+        # _STARTUP_WIN.SCX's Exit Game box uses SystemMes modes 0x0A-0x11 and
+        # reads its answer from SW_SYSSEL + 1.
+        g = self.start()
+        new_game(g)
+        menu_select(g, MENU_EXIT)
+        g.wait_for(lambda s: s["sysmesbox"] == 1, 10, what="Exit Game box")
+        tap(g, "Backspace")  # Cancel
+        g.wait_for(lambda s: s["sysmesbox"] == 0, 10, what="box closed")
+        time.sleep(0.5)
+        self.assertEqual(g.state()["sysmenu"], MENU_SHOWN)
+        self.assertNoNewErrors(g)
+        self.assertFalse([l for l in g.log_lines() if "Unknown mode" in l])
+        tap(g, "Return")  # the cursor is still on Exit Game
+        g.wait_for(lambda s: s["sysmesbox"] == 1, 10, what="Exit Game box")
+        tap(g, "Return")  # OK
+        for _ in range(50):
+            if not g.alive():
+                break
+            time.sleep(0.2)
+        # A clean exit, not std::terminate on the work queue's threads.
+        self.assertEqual(g.proc.returncode, 0)
 
     def test_return_to_title_asks_and_goes_back(self):
         g = self.start()

@@ -1,5 +1,7 @@
 #include "devinput.h"
 
+#include <cmath>
+
 #include <cstdio>
 #include <fstream>
 #include <set>
@@ -27,6 +29,7 @@
 #include "ui/ui.h"
 #include "io/vfs.h"
 #include "video/videosystem.h"
+#include "game.h"
 #ifndef IMPACTO_DISABLE_FFMPEG
 #include "video/ffmpegplayer.h"
 #endif
@@ -165,6 +168,7 @@ static void ReplyState() {
       "phoneopen={} phonect={} phonemode={} glyphs={} rows={} opaque={} "
       "mastervol={} "
       "movie0={} movie1={} movieno={} subs={} maudio={} aclock={} "
+      "backlogn={} meswin={} backlogtop=\"{}\" "
       "name=\"{}\" text=\"{}\" wrapped=\"{}\"",
       Frame, ScrWork[SW_GAMESTATE], (int)GetFlag(SF_TITLEMODE),
       ScrWork[SW_SCRIPTID], ScrWork[SW_LINEID], (int)GetFlag(SF_MESSKIP),
@@ -188,6 +192,11 @@ static void ReplyState() {
       Video::Players[0] && Video::Players[0]->IsPlaying ? Subtitle::DrawnImages
                                                         : 0,
       movieAudioReplaced, movieAudioClock,
+      UI::BacklogMenuPtr ? UI::BacklogMenuPtr->EntryCount() : 0,
+      (int)std::lround(Game::MessageWindowOpacity() * 100),
+      UI::BacklogMenuPtr && UI::BacklogMenuPtr->NewestEntryGlyphs()
+          ? GlyphText(*UI::BacklogMenuPtr->NewestEntryGlyphs())
+          : "",
       page ? GlyphText(page->Name) : "",
       page ? GlyphText(page->Glyphs) : "",
       page ? GlyphText(page->Glyphs, true) : ""));

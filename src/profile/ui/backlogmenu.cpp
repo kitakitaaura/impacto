@@ -32,6 +32,8 @@ void Configure() {
 
     EntryHighlightLocation =
         EnsureGetMember<EntryHighlightLocationType>("EntryHighlightLocation");
+    AddLineOnDisplay =
+        TryGetMember<bool>("AddLineOnDisplay").value_or(AddLineOnDisplay);
 
     BacklogBackground = EnsureGetMember<Sprite>("BacklogBackgroundSprite");
     EntryHighlight = EnsureGetMember<Sprite>("EntryHighlightSprite");

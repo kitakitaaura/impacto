@@ -6,6 +6,7 @@
 #include "../profile/dialogue.h"
 #include "../profile/games/chlcc/dialoguebox.h"
 #include "../profile/vm.h"
+#include "../profile/ui/backlogmenu.h"
 
 #include "../ui/ui.h"
 #include "../data/tipssystem.h"
@@ -72,6 +73,7 @@ void DialoguePage::Clear() {
 
   AudioId.reset();
   CurrentStringAddress.reset();
+  CurrentStringInBacklog = false;
 
   CurrentLineTop = 0.0f;
   CurrentLineTopMargin = 0.0f;
@@ -84,6 +86,7 @@ void DialoguePage::AddString(Vm::Sc3VmThread* ctx, std::optional<int> voiceId,
   CurrentStringAddress = {
       Profile::Vm::UseMsbStrings ? Vm::MsbBuffers : Vm::ScriptBuffers,
       ctx->ScriptBufferId, ctx->IpOffset};
+  CurrentStringInBacklog = false;
   AudioId = voiceId;
 
   CharacterId = charId;
@@ -103,6 +106,8 @@ void DialoguePage::AddString(Vm::Sc3VmThread* ctx, std::optional<int> voiceId,
   Typewriter.SetFirstGlyph(typeWriterStart);
   Typewriter.SetGlyphCount(Glyphs.size() - typeWriterStart);
   Typewriter.SetParallelStartGlyphs(DialogueTextParserInst.ParallelStartGlyphs);
+
+  if (Profile::BacklogMenu::AddLineOnDisplay) PushBacklogEntry();
 }
 
 void DialoguePage::PlayLine() {
@@ -244,13 +249,15 @@ void DialoguePage::Hide() { FadeAnimation.StartOut(); }
 void DialoguePage::Show() { FadeAnimation.StartIn(true); }
 
 void DialoguePage::PushBacklogEntry() {
-  if (!CurrentStringAddress.has_value() || GetFlag(SF_REVADDDISABLE) ||
+  if (!CurrentStringAddress.has_value() || CurrentStringInBacklog ||
+      GetFlag(SF_REVADDDISABLE) ||
       (ScrWork[SW_MESWIN0TYPE + Profile::Vm::ScrWorkMesStructSize * Id] &
        +MesWinTypeBit::DontAddToBacklog)) {
     return;
   }
 
   UI::BacklogMenuPtr->AddMessage(*CurrentStringAddress, AudioId, AnimationId);
+  CurrentStringInBacklog = true;
 }
 
 RectF DialoguePage::SetBounds() {

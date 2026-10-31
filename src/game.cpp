@@ -3,6 +3,8 @@
 #include "games/sghd/phone.h"
 #include "game.h"
 
+#include <algorithm>
+
 #include "text/dialoguepage.h"
 #include "workqueue.h"
 #include "modelviewer.h"
@@ -465,6 +467,18 @@ static bool SghdMovieOnTop() {
          ScrWork[SW_MOVIEPRI] >= 3000;
 }
 
+// Steam STEINS;GATE: the backlog (system sub menu 1) is a full-screen
+// translucent panel listing lines over the message window's area; the
+// message window fades out as the script fades the backlog in
+// (SW_SYSSUBMENUALPHA 0..256) and back as it fades out.
+float MessageWindowOpacity() {
+  if (Profile::Vm::GameInstructionSet != Vm::InstructionSet::SGHD ||
+      ScrWork[SW_SYSSUBMENUNO] != 1) {
+    return 1.0f;
+  }
+  return 1.0f - std::clamp(ScrWork[SW_SYSSUBMENUALPHA], 0, 256) / 256.0f;
+}
+
 static void RenderMain() {
   Background2D::LastRenderedBackground = nullptr;
   UI::GameSpecific::RenderEarlyMain();
@@ -681,9 +695,10 @@ void Render() {
           if (!GetFlag(SF_UIHIDDEN) &&
               (!GetFlag(SF_SELECTMODE) || GetFlag(SF_SYSTEMMENUCAPTURE))) {
             // Dialogue pages drawn in reverse order, at least for cclcc
+            const float opacity = MessageWindowOpacity();
             for (auto pageIt = DialoguePages.rbegin();
                  pageIt != DialoguePages.rend(); pageIt++) {
-              pageIt->Render(1.0f);
+              if (opacity > 0.0f) pageIt->Render(opacity);
             }
           }
 

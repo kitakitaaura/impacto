@@ -91,6 +91,7 @@ struct DialoguePage : public TextPage {
   void Hide();
   void Show();
 
+  // Adds the current string to the backlog, once per string.
   void PushBacklogEntry();
   void PlayLine();
 
@@ -102,6 +103,7 @@ struct DialoguePage : public TextPage {
   std::unique_ptr<WaitIcon> WaitIconInst = WaitIcon::Create(this);
 
   std::optional<Vm::BufferOffsetContext> CurrentStringAddress;
+  bool CurrentStringInBacklog = false;
 };
 
 inline std::vector<DialoguePage> DialoguePages;

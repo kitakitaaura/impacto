@@ -33,6 +33,10 @@ root.BacklogMenu = {
 
     HoverBounds = { X = 60, Y = 84, Width = 1130, Height = 630 },
 
+    -- The backlog covers the message window (game.cpp fades it out), so the
+    -- line on screen has to be its newest entry.
+    AddLineOnDisplay = true,
+
     FadeInDuration = 0.25,
     FadeOutDuration = 0.25,
 

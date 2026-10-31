@@ -16,6 +16,11 @@ class BacklogMenuInterface : public Menu {
 
   virtual void MenuButtonOnClick(Widgets::BacklogEntry* target) = 0;
   virtual void Clear() = 0;
+  // DevInput's state.
+  virtual size_t EntryCount() const { return 0; }
+  virtual const std::vector<ProcessedTextGlyph>* NewestEntryGlyphs() const {
+    return nullptr;
+  }
 
   float PageY = 0.0f;
 };
@@ -32,6 +37,10 @@ class BacklogMenu : public BacklogMenuInterface {
   virtual void Update(float dt) override;
   virtual void UpdateInput(float dt) override;
   virtual void Render() override;
+  size_t EntryCount() const override { return Entries.size(); }
+  const std::vector<ProcessedTextGlyph>* NewestEntryGlyphs() const override {
+    return Entries.empty() ? nullptr : &Entries.front().Page.Glyphs;
+  }
 
   void AddMessage(Vm::BufferOffsetContext scrCtx,
                   std::optional<int> audioId = std::nullopt,

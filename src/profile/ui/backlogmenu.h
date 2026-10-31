@@ -33,6 +33,10 @@ inline Sprite ScrollbarThumb;
 
 inline size_t MaxEntryCount;
 
+// Lines go into the backlog when they appear, not when the player moves on,
+// so the line on screen is the backlog's newest entry.
+inline bool AddLineOnDisplay = false;
+
 inline float EntryYPadding;
 inline glm::vec2 EntriesStart;
 inline glm::vec2 EntryHighlightOffset;

@@ -61,6 +61,8 @@ void Shutdown();
 
 void Update(float dt);
 void Render();
+// Message windows' opacity under full-screen menus (1 when not covered).
+float MessageWindowOpacity();
 
 void LauncherUpdate(float dt);
 void LauncherRender();
